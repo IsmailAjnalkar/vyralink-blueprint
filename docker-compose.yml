@@ -1,0 +1,88 @@
+# Full stack on one machine: PostgreSQL, API, worker, web. For local verification and a staging-like demo.
+#   cp .env.example .env   # then set APP_SECRET, POSTGRES_PASSWORD, ADMIN_PASSWORD
+#   docker compose up --build
+#   open http://localhost:3030   (WEB_PORT; with SITE_ADDRESS=your.domain Caddy serves HTTPS on 443)
+# Integrations run in sandbox/dev mode (see docs/DEPLOYMENT.md), so the API runs with NODE_ENV=staging:
+# NODE_ENV=production refuses to start until real payment, email, storage and orders providers exist.
+name: vyralink
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: vyralink
+      POSTGRES_USER: vyralink
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vyralink -d vyralink"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Not published to the host: only the API and worker reach the database.
+
+  api:
+    build: { context: ., target: api }
+    image: vyralink-api
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      NODE_ENV: staging
+      DATABASE_URL: postgres://vyralink:${POSTGRES_PASSWORD}@postgres:5432/vyralink
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env (32+ random bytes)}
+      WEB_URL: ${WEB_URL:-http://localhost:3030}
+      TRUSTED_PROXIES: uniquelocal # the web container on the compose network
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      PAYMENTS_PROVIDER: sandbox
+      EMAIL_PROVIDER: dev
+      STORAGE_PROVIDER: local
+      ORDERS_PROVIDER: ${ORDERS_PROVIDER:-csv}
+    volumes:
+      - storage:/data/storage
+    # Internal only: the browser talks to the web app, which proxies /api to here.
+
+  worker:
+    build: { context: ., target: worker }
+    image: vyralink-worker
+    depends_on:
+      api: { condition: service_healthy } # the API applies migrations first
+    environment:
+      NODE_ENV: staging
+      DATABASE_URL: postgres://vyralink:${POSTGRES_PASSWORD}@postgres:5432/vyralink
+      WEB_URL: ${WEB_URL:-http://localhost:3030}
+      EMAIL_PROVIDER: dev
+    volumes:
+      - mail:/data/mail
+
+  web:
+    build: { context: ., target: web }
+    image: vyralink-web
+    depends_on:
+      api: { condition: service_healthy }
+    environment:
+      API_URL: http://api:4020
+      COOKIE_SECURE: ${COOKIE_SECURE:-false} # true behind HTTPS
+      TRUSTED_PROXY_HOPS: ${WEB_TRUSTED_PROXY_HOPS:-0} # extra trusted proxies in front of Caddy (Caddy's own entry is the client)
+      WEB_ORIGINS: ${WEB_ORIGINS:-} # e.g. https://app.example.com; empty = compare with the Host header
+    # Not published: only the edge proxy reaches the web app, so X-Forwarded-For always comes from Caddy.
+
+  edge:
+    image: caddy:2-alpine
+    depends_on:
+      web: { condition: service_healthy }
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+    ports:
+      - "${WEB_PORT:-3030}:80"
+      - "${HTTPS_PORT:-8443}:443"
+
+volumes:
+  caddy:
+  pgdata:
+  storage:
+  mail:

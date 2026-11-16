@@ -3,9 +3,10 @@ import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 import { COOKIE_SECURE, ORG_COOKIE, SESSION_MAX_AGE } from "@/lib/config";
 import { serverApi, type Me } from "@/lib/session";
+import { sameOrigin } from "@/lib/origin";
 
 export async function POST(req: NextRequest) {
-  if (req.headers.get("origin") !== req.nextUrl.origin) return Response.json({ error: "Cross-site request refused", code: "csrf" }, { status: 403 });
+  if (!sameOrigin(req)) return Response.json({ error: "Cross-site request refused", code: "csrf" }, { status: 403 });
   const { orgId } = (await req.json().catch(() => ({}))) as { orgId?: string };
   const { data } = await serverApi<Me>("me");
   if (!data) return Response.json({ error: "Sign in first", code: "unauthenticated" }, { status: 401 });

@@ -9,3 +9,4 @@ e2e/.storage/
 .storage/
 test-results/
 playwright-report/
+.env

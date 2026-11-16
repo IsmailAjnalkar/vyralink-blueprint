@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import type { NextConfig } from "next";
 
 // Security headers for every page. The app is same-origin only: the browser talks to /api/* (this app), never to the API host.
@@ -26,6 +27,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Self-contained server for the Docker image; the monorepo root is traced so workspace packages are included.
+  output: "standalone",
+  outputFileTracingRoot: resolve(process.cwd(), "../.."),
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

@@ -1,0 +1,16 @@
+**/node_modules
+**/.next
+.git
+.dev-db
+.dev-mail
+.storage
+e2e
+test-results
+playwright-report
+**/*.tsbuildinfo
+**/.env*
+apps/api/test
+apps/api/scripts
+docs
+project
+batch*-files.json

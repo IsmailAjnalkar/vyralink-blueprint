@@ -5,7 +5,7 @@ import { defineConfig } from "@playwright/test";
 
 export const API = "http://127.0.0.1:4120";
 export const WEB = "http://localhost:3120";
-export const DB = "postgres://postgres:postgres@127.0.0.1:5441/vyralink_e2e";
+export const DB = process.env.E2E_DATABASE_URL ?? "postgres://postgres:postgres@127.0.0.1:5441/vyralink_e2e";
 export const ADMIN = { email: "admin@e2e.local", password: "E2E-Admin-Password-1" };
 
 const channel = process.env.PW_CHANNEL ?? (process.platform === "win32" && !process.env.CI ? "msedge" : undefined);

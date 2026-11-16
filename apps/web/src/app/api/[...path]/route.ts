@@ -5,6 +5,7 @@
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 import { API_URL, COOKIE_SECURE, ORG_COOKIE, SESSION_COOKIE, SESSION_MAX_AGE } from "@/lib/config";
+import { sameOrigin } from "@/lib/origin";
 
 const TOKEN_ROUTES = new Set(["auth/login", "auth/verify-email", "auth/mfa/verify"]);
 const LOGOUT_ROUTES = new Set(["auth/logout", "auth/logout-all"]);
@@ -12,10 +13,10 @@ const FORWARD_REQUEST = ["content-type", "user-agent", "accept"];
 const FORWARD_RESPONSE = ["content-type", "cache-control", "retry-after", "content-disposition"];
 
 /**
- * The caller's real address. The Next.js server appends the connecting peer to X-Forwarded-For, so entries are
- * counted from the right: skip TRUSTED_PROXY_HOPS entries added by our own proxies in front of this app (0 when
- * the app is reached directly). Anything further left was written by the client and is ignored, so the API's
- * per-IP rate limits can't be dodged with a forged header.
+ * The caller's real address. Next.js keeps an incoming X-Forwarded-For as-is (it only fills it in when missing), so
+ * this app must be reached only through the edge proxy (deploy/Caddyfile), which replaces the header with the real
+ * connection address. Entries are counted from the right, skipping TRUSTED_PROXY_HOPS extra trusted proxies in front
+ * of the edge (0 by default). Never expose this app directly: a client could then write the header itself.
  */
 function clientIp(req: NextRequest): string {
   const chain = (req.headers.get("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -29,8 +30,7 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   if (!/^[\w\-/.]+$/.test(route) || route.includes("..")) return Response.json({ error: "Not found", code: "not_found" }, { status: 404 });
 
   if (!["GET", "HEAD"].includes(req.method)) {
-    const origin = req.headers.get("origin");
-    if (!origin || origin !== req.nextUrl.origin) return Response.json({ error: "Cross-site request refused", code: "csrf" }, { status: 403 });
+    if (!sameOrigin(req)) return Response.json({ error: "Cross-site request refused", code: "csrf" }, { status: 403 });
   }
 
   const jar = await cookies();

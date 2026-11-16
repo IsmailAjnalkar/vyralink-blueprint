@@ -1,0 +1,16 @@
+# Edge proxy in front of the web app.
+# - Sets X-Forwarded-For from the real connection and ignores any client-supplied value (Caddy's default for clients
+#   that aren't trusted proxies). The web app and API rely on this: the web app is never reachable directly.
+# - With SITE_ADDRESS set to a domain (e.g. app.example.com), Caddy obtains and renews a TLS certificate automatically.
+#   If a cloud load balancer sits in front, add `trusted_proxies static <its ranges>` to the global options.
+{
+	admin off
+}
+
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+	reverse_proxy web:3020 {
+		# Server-sent events (LIVE control center): pass each event through immediately.
+		flush_interval -1
+	}
+}
