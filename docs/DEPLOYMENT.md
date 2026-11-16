@@ -42,3 +42,13 @@ Verified locally: a sign-in through the proxy carrying a forged `X-Forwarded-For
 | TikTok Shop partner app credentials | order sync | Blocked: no approved access (CSV import works) |
 | S3-compatible storage | product images, documents | Blocked: no bucket |
 | Sentry DSN | error monitoring | optional |
+
+## End-to-end tests (local)
+
+```
+npm run db:start
+npm run build -w @vyralink/web
+npm run test:e2e        # API :4120 + web :3120 on a fresh vyralink_e2e database
+```
+
+Uses the system Microsoft Edge on Windows (`PW_CHANNEL=msedge`); elsewhere run `npx playwright install chromium` first.

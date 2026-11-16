@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { roleLabel } from "@/components/shell";
+import { roleLabel } from "@/lib/roles";
 import { FormError, TextField } from "@/components/form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,7 +31,7 @@ export function Team({ orgId, roles, isManager, myId }: { orgId: string; roles: 
     try { await fn(); setNotice(ok); await load(); } catch (e) { setError(e instanceof ApiError ? e.message : "That didn’t work."); }
   };
 
-  async function invite(e: React.FormEvent<HTMLFormElement>) {
+  async function invite(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const email = String(f.get("email"));

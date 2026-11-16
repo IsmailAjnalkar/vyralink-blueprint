@@ -2,8 +2,12 @@
   "name": "vyralink",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*"],
-  "engines": { "node": ">=22" },
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "db:start": "npm run db:start -w @vyralink/api",
     "db:stop": "npm run db:stop -w @vyralink/api",
@@ -11,6 +15,10 @@
     "dev:api": "npm run dev -w @vyralink/api",
     "dev:web": "npm run dev -w @vyralink/web",
     "test": "npm test --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present"
+    "build": "npm run build --workspaces --if-present",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1"
   }
 }

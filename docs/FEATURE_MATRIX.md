@@ -12,15 +12,15 @@ Status: **Working** (built and tested), **Partial**, **Missing**, **Blocked** (n
 | Sessions: expiry, revocation | Working | Working | |
 | Organizations, members, roles | Working | Working | incl. Support Admin, Brand Finance |
 | Organization invitations by email | Working | Working | |
-| Brand verification | Working | Missing | |
-| Products (incl. claims review) | Working | Missing | image upload missing |
-| Campaigns (LIVE, LIVE DROP) + approval | Working | Missing | UGC/influencer/affiliate/retainer types missing |
-| Creator discovery, profile, compare | Working (search, profile) | Missing | compare is client-side |
-| Invitations, applications, counter-offers | Working | Missing | |
-| Contracts and e-signature | Working | Missing | |
-| Academy (server-graded) | Working | Missing | |
+| Brand verification | Working | Working | document upload **Blocked** (no storage); file names recorded |
+| Products (incl. claims review) | Working | Working | image upload **Blocked** (no storage) |
+| Campaigns (LIVE, LIVE DROP) + approval | Working | Working | UGC/influencer/affiliate/retainer types missing |
+| Creator discovery, profile, compare | Working (search, profile) | Working | compare is client-side |
+| Invitations, applications, counter-offers | Working | Working | counter/decline use a browser prompt (to be replaced by a dialog) | |
+| Contracts and e-signature | Working | Working | typed-name signature | |
+| Academy (server-graded) | Working | Working | |
 | Locations, booths, equipment | Working | Missing | |
-| Booking: hold, confirm, cancel, conflicts | Working | Missing | rescheduling missing |
+| Booking: hold, confirm, cancel, conflicts | Working | Partial | brand hold + cancel quote in UI; studio confirm is Phase 3 | rescheduling missing |
 | Producer assignment, shifts | Partial | Missing | no shift table |
 | Shipments, samples, returns | Working | Missing | |
 | Check-in, no-show, readiness, go | Working | Missing | |
@@ -29,13 +29,13 @@ Status: **Working** (built and tested), **Partial**, **Missing**, **Blocked** (n
 | Results / refunds import (CSV) | Working | Missing | |
 | Reconciliation and lock | Working | Missing | |
 | Invoices, credit notes | Working | Missing | real payments **Blocked** (Stripe account) |
-| Seller ledger, adjustments (two-person) | Working | Missing | |
+| Seller ledger, adjustments (two-person) | Working | Partial | seller earnings page; finance screens Phase 5 | |
 | Payout runs (two-person) | Working | Missing | real payouts **Blocked** |
 | Disputes | Working | Missing | |
 | Brand campaign report | Working | Missing | |
 | Notifications (in-app) | Working | Missing | email delivery missing |
-| Messages | Working | Missing | |
-| Admin: verifications, moderation, orgs, users, flags, settings, audit | Working | Missing | |
+| Messages | Working | Working | contact details masked (E2E-verified) | |
+| Admin: verifications, moderation, orgs, users, flags, settings, audit | Working | Partial | review queue (verifications, products, seller sandbox checks); rest later | |
 | TikTok Shop API | Blocked | — | no partner access; CSV import works |
 | Stripe | Blocked | — | no account; simulated |
 | File storage (S3) | Missing | — | |

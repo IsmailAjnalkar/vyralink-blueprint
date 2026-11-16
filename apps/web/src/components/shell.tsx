@@ -2,18 +2,22 @@
 // Signed-in shell: organization switcher, portal navigation, sign-out. Navigation lists only screens that exist.
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
+import { roleLabel } from "@/lib/roles";
 import type { Me, Membership } from "@/lib/session";
 
 export type NavItem = { href: string; label: string };
-const ROLE_LABEL: Record<string, string> = {
-  brand_owner: "Brand Owner", brand_marketing_manager: "Brand Manager", brand_finance: "Brand Finance",
-  location_manager: "Location Manager", producer: "Studio Producer", inventory: "Inventory Coordinator", finance_admin: "Finance Administrator",
-};
-export const roleLabel = (r: string) => ROLE_LABEL[r] ?? r;
+
+const SessionContext = createContext<{ me: Me; current: Membership | null } | null>(null);
+/** The signed-in user and current organization, for client pages inside the shell. */
+export function useSession() {
+  const s = useContext(SessionContext);
+  if (!s) throw new Error("useSession outside Shell");
+  return s;
+}
 
 export function Shell({ me, current, nav, children }: { me: Me; current: Membership | null; nav: NavItem[]; children: ReactNode }) {
   const router = useRouter();
@@ -31,6 +35,7 @@ export function Shell({ me, current, nav, children }: { me: Me; current: Members
   const context = current ? `${current.name} · ${roleLabel(current.role)}` : me.sellerProfile ? "LIVE Seller" : me.user.is_super_admin ? "Platform admin" : me.user.is_support_admin ? "Platform support" : "No organization";
 
   return (
+    <SessionContext.Provider value={{ me, current }}>
     <div className="flex min-h-svh flex-col">
       <header className="flex flex-wrap items-center gap-3 border-b px-4 py-2">
         <Link href="/app" className="mr-2 text-sm font-extrabold tracking-[0.2em]">VYRALINK</Link>
@@ -69,5 +74,6 @@ export function Shell({ me, current, nav, children }: { me: Me; current: Members
         <main className="min-w-0 flex-1 p-6">{children}</main>
       </div>
     </div>
+    </SessionContext.Provider>
   );
 }

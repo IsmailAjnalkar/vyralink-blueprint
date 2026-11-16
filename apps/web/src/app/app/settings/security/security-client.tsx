@@ -20,7 +20,7 @@ export function MfaCard({ enabled, required }: { enabled: boolean; required: boo
     setError(null);
     try { setSetup(await api("auth/mfa/setup", { method: "POST" })); } catch (e) { setError(e instanceof ApiError ? e.message : "Couldn’t start setup."); }
   }
-  async function enable(e: React.FormEvent<HTMLFormElement>) {
+  async function enable(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError(null);
