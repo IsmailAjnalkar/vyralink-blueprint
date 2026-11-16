@@ -5,3 +5,16 @@ export type Campaign = {
   performance_fee_bps: number; budget_cap_cents: number; target_gmv_cents: number | null; required_courses: string[]; required_category: string | null;
   approval_note: string | null; cancel_fee_cents: number | null;
 };
+
+export type Location = {
+  id: string; org_id: string; name: string; address: string; timezone: string; status: string;
+  setup_min: number; teardown_min: number; hold_hours: number; sample_cutoff_hours: number; checkin_open_min: number; no_show_min: number;
+};
+export type Booth = { id: string; name: string; type: string; categories: string[]; status: string };
+export type Equipment = { id: string; code: string; type: string; booth_id: string | null; status: string };
+export type Booking = {
+  id: string; status: string; starts_at: string; ends_at: string; booth: string; booth_id: string; location_id: string; campaign: string; campaign_id: string; campaign_status: string;
+  seller_id: string | null; producer_id: string | null; seller?: string | null; hold_expires_at: string | null; checkin_code?: string; checked_in_at: string | null; go_at: string | null;
+  arrival_at?: string; no_show_min: number; checkin_open_min: number; sample_cutoff_hours: number; readiness?: { item: string; result: string; note: string | null }[];
+};
+export type Shipment = { id: string; product: string; product_id: string; expected_qty: number; received_qty: number | null; tracking: string | null; condition: string | null; shelf: string | null; status: string; overdue: boolean; cutoff: string };

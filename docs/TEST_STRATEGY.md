@@ -4,7 +4,7 @@
 |---|---|---|---|
 | Unit | `node:test` (API), Vitest (web) | every commit | money rules, status transitions, grading, matching rules |
 | Integration | `node:test` + Fastify `inject` + a fresh PostgreSQL database per run | every commit | every route group, tenancy, booking conflicts, ledger, payouts, disputes |
-| End to end | Playwright | every commit (CI) | GlowSkin scenario through the web UI. `npm run test:e2e` (needs `npm run db:start` and a web build). Marketplace part done (7 tests); LIVE → payout part follows Phases 3–5 |
+| End to end | Playwright | every commit (CI) | GlowSkin scenario through the web UI (`e2e/glowskin.spec.ts`). `npm run test:e2e` (needs `npm run db:start` and a web build). Done through the Go (10 tests); LIVE → payout follows Phases 4–5 |
 | Security | integration tests | every commit | cross-tenant reads/writes, privilege escalation, invalid/expired tokens, CSRF, rate limits, webhook replay, injection payloads |
 | Performance | scripted load (autocannon) | before release | concurrent booking holds, search, dashboards |
 

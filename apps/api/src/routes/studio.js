@@ -1,7 +1,7 @@
 // Studio operations: locations, booths, bookings, producers, equipment, shipments, samples, check-in, readiness,
 // LIVE session, metrics, incidents, closeout, results import, control center (blueprint O01–O24, C13–C19, BF08–BF15).
 import { setting, tx } from '../db.js';
-import { audit, bad, body, conflict, forbidden, member, notify, notFound, one, orgUsers, BRAND } from '../http.js';
+import { audit, bad, body, conflict, forbidden, member, notify, notFound, one, orgUsers, user, BRAND } from '../http.js';
 import { adjustAfterLock, loadSettlement, recomputeProvisional } from '../settle.js';
 import { assertMove } from '../status.js';
 import { ARRIVAL_LEAD_MIN } from './catalog.js';
@@ -167,6 +167,60 @@ export default async function studio(app) {
       await notify(db, [...(await orgUsers(db, b.brand_org, BRAND)), b.seller_id, b.producer_id], 'booking', `${b.campaign} is confirmed at ${b.booth}`);
       return { status: 'confirmed' };
     });
+  });
+
+  // ---------------------------------------------------------------- moving and rescheduling
+  /** Studio moves a booking to another of its booths at the same time (e.g. a booth goes into maintenance). */
+  app.post('/bookings/:id/move', { schema: body({ boothId: 'uuid' }) }, async (req) => {
+    return tx(pool, async (db) => {
+      const { m, b } = await opsBooking(db, req, req.params.id, ['location_manager']);
+      if (!['hold', 'confirmed'].includes(b.status)) throw conflict('Only upcoming bookings can move');
+      const to = await one(db, 'SELECT bo.*, l.setup_min, l.teardown_min FROM booths bo JOIN locations l ON l.id = bo.location_id WHERE bo.id = $1 AND l.org_id = $2', [req.body.boothId, m.orgId], 'Booth not found');
+      if (to.id === b.booth_id) throw bad('That is the current booth');
+      if (to.status !== 'available') throw conflict(`${to.name} is not available (${to.status})`);
+      // The exclusion constraint refuses the move if the new booth is busy at that time (setup and teardown included).
+      await db.query(`UPDATE bookings SET booth_id = $2, slot = tstzrange(starts_at - make_interval(mins => $3), ends_at + make_interval(mins => $4)) WHERE id = $1`, [b.id, to.id, to.setup_min, to.teardown_min]);
+      await audit(db, req, 'booking.moved', 'booking', b.id, { from: b.booth_id, to: to.id });
+      await notify(db, [...(await orgUsers(db, b.brand_org, BRAND)), b.seller_id, b.producer_id].filter(Boolean), 'booking', `${b.campaign} moved from ${b.booth} to ${to.name} (same time)`);
+      return { booth: to.name };
+    });
+  });
+
+  /**
+   * Brand Owner moves a held slot to a new time before any contract carries the old one.
+   * ponytail: confirmed sessions are cancelled and rebooked; a two-party reschedule request flow comes when brands need it.
+   */
+  app.post('/bookings/:id/reschedule', { schema: body({ startsAt: 'datetime', endsAt: 'datetime' }) }, async (req) => {
+    return tx(pool, async (db) => {
+      const m = member(req, ['brand_owner']);
+      const b = await one(db, `${BOOKING_SQL} FOR UPDATE OF b`, [req.params.id], 'Booking not found');
+      if (b.brand_org !== m.orgId) throw notFound('Booking not found');
+      if (b.status !== 'hold' || b.hold_expires_at < new Date()) throw conflict('Only an active hold can be rescheduled. For a confirmed session, cancel and book again.', 'not_hold');
+      const start = new Date(req.body.startsAt);
+      const end = new Date(req.body.endsAt);
+      if (!(end > start) || start <= new Date()) throw bad('Choose a future start and an end after it');
+      const { rows: live } = await db.query('SELECT 1 FROM contracts WHERE campaign_id = $1 AND NOT void', [b.campaign_id]);
+      if (live.length) throw conflict('A contract already states the current time. Reschedule before a seller accepts, or cancel and rebook.', 'contract_exists');
+      const loc = await one(db, 'SELECT l.setup_min, l.teardown_min FROM booths bo JOIN locations l ON l.id = bo.location_id WHERE bo.id = $1', [b.booth_id]);
+      await db.query(`UPDATE bookings SET starts_at = $2, ends_at = $3, slot = tstzrange($2::timestamptz - make_interval(mins => $4), $3::timestamptz + make_interval(mins => $5)) WHERE id = $1`, [b.id, start, end, loc.setup_min, loc.teardown_min]);
+      await db.query('UPDATE campaigns SET starts_at = $2, ends_at = $3 WHERE id = $1', [b.campaign_id, start, end]);
+      await audit(db, req, 'booking.rescheduled', 'booking', b.id, { from: [b.starts_at, b.ends_at], to: [start, end] });
+      const { rows: invited } = await db.query(`SELECT seller_id FROM invitations WHERE campaign_id = $1 AND status IN ('invited', 'viewed', 'countered', 'applied')`, [b.campaign_id]);
+      await notify(db, invited.map((i) => i.seller_id), 'invitation', `${b.campaign} moved to ${start.toISOString()}`);
+      return { startsAt: start, endsAt: end };
+    });
+  });
+
+  /** The seller's own sessions, with the check-in code they show at the front desk. */
+  app.get('/seller/bookings', async (req) => {
+    const u = user(req);
+    const { rows } = await pool.query(
+      `SELECT b.id, b.status, b.starts_at, b.ends_at, b.checkin_code, bo.name AS booth, l.name AS location, l.address, c.id AS campaign_id, c.name AS campaign, o.name AS brand, pu.name AS producer,
+         (SELECT result FROM readiness r WHERE r.booking_id = b.id AND r.item = 'briefing_acknowledged') AS briefing,
+         (SELECT COALESCE(json_agg(json_build_object('name', p.name, 'sellingPoints', p.selling_points, 'restrictedClaims', p.restricted_claims)), '[]') FROM products p WHERE p.id = ANY(c.product_ids)) AS products
+       FROM bookings b JOIN booths bo ON bo.id = b.booth_id JOIN locations l ON l.id = bo.location_id JOIN campaigns c ON c.id = b.campaign_id JOIN orgs o ON o.id = c.org_id
+       LEFT JOIN users pu ON pu.id = b.producer_id WHERE b.seller_id = $1 ORDER BY b.starts_at DESC`, [u.id]);
+    return rows.map((r) => ({ ...r, arrival_at: arrival(r) }));
   });
 
   // ---------------------------------------------------------------- shipments and samples

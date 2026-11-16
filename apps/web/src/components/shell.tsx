@@ -62,7 +62,9 @@ export function Shell({ me, current, nav, children }: { me: Me; current: Members
         <nav aria-label="Main" className="w-full border-b bg-muted/30 p-3 sm:w-56 sm:border-b-0 sm:border-r">
           <ul className="flex flex-wrap gap-1 sm:flex-col">
             {nav.map((n) => {
-              const active = n.href === "/app" ? pathname === "/app" : pathname.startsWith(n.href);
+              // The longest matching link is the active one (so "Today" isn't lit on /app/studio/bookings).
+              const matches = (h: string) => pathname === h || pathname.startsWith(`${h}/`);
+              const active = n.href === nav.filter((x) => matches(x.href)).sort((x, y) => y.href.length - x.href.length)[0]?.href;
               return (
                 <li key={n.href}>
                   <Link href={n.href} aria-current={active ? "page" : undefined} className={`block rounded-md px-3 py-2 text-sm ${active ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}>{n.label}</Link>

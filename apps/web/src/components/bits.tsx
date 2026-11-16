@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { FormError } from "@/components/form";
 import { Badge } from "@/components/ui/badge";
 
-const GOOD = new Set(["approved", "verified", "published", "accepted", "scheduled", "completed", "paid", "confirmed", "signed"]);
-const BAD = new Set(["rejected", "declined", "cancelled", "expired", "withdrawn", "no_show", "void", "failed", "on_hold", "disputed"]);
+const GOOD = new Set(["passed", "received", "approved", "verified", "published", "accepted", "scheduled", "completed", "paid", "confirmed", "signed"]);
+const BAD = new Set(["overdue", "short", "rejected", "declined", "cancelled", "expired", "withdrawn", "no_show", "void", "failed", "on_hold", "disputed"]);
 
 /** Status as text plus color; color is never the only signal. */
 export function Status({ value }: { value: string | null | undefined }) {

@@ -122,6 +122,13 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   assert.equal(clash.status, 409);
   assert.equal(clash.body.code, 'overlap');
   assert.match(clash.body.error, /Beauty Booth 01 is already booked/);
+  // Rescheduling a hold: Brand Owner only; the slot and campaign move together; then back to the original time.
+  const later = { startsAt: new Date(start.getTime() + 864e5).toISOString(), endsAt: new Date(end.getTime() + 864e5).toISOString() };
+  assert.equal((await call('POST', `/bookings/${id.booking}/reschedule`, { as: 'leo', org: id.brand, body: later })).status, 403);
+  assert.equal((await call('POST', `/bookings/${id.booking}/reschedule`, { ...brand, body: { startsAt: end.toISOString(), endsAt: start.toISOString() } })).status, 400);
+  await ok('POST', `/bookings/${id.booking}/reschedule`, { ...brand, body: later });
+  assert.equal(new Date((await ok('GET', `/campaigns/${camp.id}`, brand)).starts_at).getTime(), new Date(later.startsAt).getTime());
+  await ok('POST', `/bookings/${id.booking}/reschedule`, { ...brand, body: { startsAt: start.toISOString(), endsAt: end.toISOString() } });
 
   // ---- seller onboarding, invitation, counter, contract (BF05–BF07)
   await ok('PUT', '/seller/profile', { as: 'sarah', body: { displayName: 'Sarah Johnson', categories: ['beauty', 'skincare'], languages: ['English', 'Spanish'], rateCents: 3000, commissionBps: 500 } });
@@ -147,6 +154,7 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   await ok('POST', `/contracts/${id.contract}/sign`, { ...brand, body: { typedName: 'Maya Chen' } });
   const signed = await ok('POST', `/contracts/${id.contract}/sign`, { as: 'sarah', body: { typedName: 'Sarah Johnson' } });
   assert.deepEqual(signed, { brandSigned: true, sellerSigned: true });
+  assert.equal((await call('POST', `/bookings/${id.booking}/reschedule`, { ...brand, body: { startsAt: start.toISOString(), endsAt: end.toISOString() } })).body.code, 'contract_exists');
   // A signed booking can't be overwritten by inviting someone else.
   const priya = await signup('priya', 'seller', 'Priya Nair');
   assert.equal((await call('POST', `/campaigns/${camp.id}/invitations`, { ...brand, body: { sellerId: priya.user.id } })).body.code, 'already_booked');
@@ -157,6 +165,16 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   await ok('POST', `/bookings/${id.booking}/assign-producer`, { ...rosa, body: { producerId: jordanId } });
   await ok('POST', `/bookings/${id.booking}/confirm`, rosa);
   assert.equal((await ok('GET', `/campaigns/${camp.id}`, brand)).status, 'scheduled');
+  // The studio moves the confirmed session to another booth at the same time; the seller sees the new booth and the code.
+  const booth2 = await ok('POST', `/locations/${id.loc}/booths`, { ...rosa, body: { name: 'Beauty Booth 02', type: 'beauty' } });
+  assert.equal((await call('POST', `/bookings/${id.booking}/move`, { as: 'maya', org: id.brand, body: { boothId: booth2.id } })).status, 403);
+  assert.equal((await ok('POST', `/bookings/${id.booking}/move`, { ...rosa, body: { boothId: booth2.id } })).booth, 'Beauty Booth 02');
+  const mine = await ok('GET', '/seller/bookings', { as: 'sarah' });
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].booth, 'Beauty Booth 02');
+  assert.match(mine[0].checkin_code, /^VL-\d{4}$/);
+  assert.deepEqual(mine[0].products[0].restrictedClaims, ['Cures acne']); // the briefing: what to say and what never to say
+  assert.deepEqual(await ok('GET', '/seller/bookings', { as: 'priya' }), []);
 
   // ---- samples (BF09)
   const ship = await ok('POST', `/bookings/${id.booking}/shipments`, { ...brand, body: { productId: product.id, expectedQty: 4, tracking: 'TRACK-1' } });

@@ -7,12 +7,14 @@ import { Empty, Messages, PageHeader, Status, when } from "@/components/bits";
 import { TextField } from "@/components/form";
 import { useSession } from "@/components/shell";
 import { Thread } from "@/components/thread";
+import type { Product } from "@/components/product-form";
+import { Field } from "@/components/form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, pct, toUnits, usd } from "@/lib/api";
-import type { Campaign } from "@/lib/types";
+import type { Campaign, Shipment } from "@/lib/types";
 import { useAction, useLoad } from "@/lib/use-load";
 
 type Invitation = { id: string; seller_id: string; display_name: string; kind: string; status: string; terms: { baseRateCents: number }; counter: { baseRateCents: number; message: string | null } | null; message: string | null; decline_reason: string | null; expires_at: string };
@@ -101,6 +103,7 @@ export default function CampaignPage() {
                 {c.bookings.map((b) => <li key={b.id}>{b.booth}: <Status value={b.status} />{b.status === "hold" && b.hold_expires_at && <> · hold expires {when(b.hold_expires_at)}</>}</li>)}
               </ul>
             )}
+            {activeBooking && <BookingTools booking={activeBooking} campaign={c} org={org} isOwner={isOwner} canReschedule={!c.contracts.some((k) => !k.void)} onDone={d.reload} />}
             {canHold && <HoldPicker campaign={c} org={org} onHold={(boothId) => act.run(post(`campaigns/${id}/hold`, { boothId }), "Booth held.")} busy={act.busy} />}
           </CardContent>
         </Card>
@@ -159,6 +162,60 @@ export default function CampaignPage() {
       )}
 
       {c && <Thread campaignId={c.id} org={org} />}
+    </div>
+  );
+}
+
+/** Brand side of a booking: ship samples to the studio; move a held slot to another time. */
+function BookingTools({ booking, campaign, org, isOwner, canReschedule, onDone }: { booking: Booking; campaign: Campaign; org: string; isOwner: boolean; canReschedule: boolean; onDone: () => unknown }) {
+  const ships = useLoad(() => api<Shipment[]>(`bookings/${booking.id}/shipments`, { org }), booking.id);
+  const products = useLoad(() => api<Product[]>("products", { org }).then((ps) => ps.filter((p) => campaign.product_ids.includes(p.id))), `${org}:${campaign.id}`);
+  const act = useAction(() => Promise.all([ships.reload(), onDone()]));
+  const local = (iso: string) => { const d = new Date(iso); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+
+  async function ship(e: React.SubmitEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const el = e.currentTarget;
+    const r = await act.run(() => api(`bookings/${booking.id}/shipments`, { org, body: { productId: String(f.get("product")), expectedQty: Number(f.get("qty")), tracking: String(f.get("tracking")).trim() || undefined } }), "Shipment announced to the studio.");
+    if (r) el.reset();
+  }
+  async function reschedule(e: React.SubmitEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const startsAt = new Date(String(f.get("start"))).toISOString();
+    const endsAt = new Date(String(f.get("end"))).toISOString();
+    await act.run(() => api(`bookings/${booking.id}/reschedule`, { org, body: { startsAt, endsAt } }), "Moved. Open invitations were told about the new time.");
+  }
+
+  return (
+    <div className="grid gap-4 rounded-md border p-3">
+      <Messages error={act.error ?? ships.error} notice={act.notice} />
+      <div className="grid gap-2">
+        <h3 className="text-sm font-semibold">Samples</h3>
+        {ships.data?.map((s) => <p key={s.id} className="text-sm">{s.product}: {s.expected_qty} sent{s.tracking && ` (${s.tracking})`} · <Status value={s.overdue ? "overdue" : s.status} />{s.received_qty != null && ` · studio received ${s.received_qty}, ${s.condition}`}</p>)}
+        {ships.data?.[0] && <p className="text-xs text-muted-foreground">Due at the studio by {when(ships.data[0].cutoff)}.</p>}
+        <form onSubmit={ship} className="grid gap-2 sm:grid-cols-[1fr_6rem_1fr_auto] sm:items-end">
+          <Field id="ship-product" label="Product">
+            <select id="ship-product" name="product" required className="h-9 rounded-md border bg-background px-2 text-sm">{products.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+          </Field>
+          <TextField id="ship-qty" name="qty" label="Quantity" type="number" min={1} defaultValue="4" required />
+          <TextField id="ship-tracking" name="tracking" label="Tracking number" />
+          <Button type="submit" size="sm" disabled={act.busy}>Announce shipment</Button>
+        </form>
+      </div>
+      {booking.status === "hold" && isOwner && (
+        <div className="grid gap-2">
+          <h3 className="text-sm font-semibold">Reschedule the hold</h3>
+          {canReschedule ? (
+            <form onSubmit={reschedule} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <TextField id="rs-start" name="start" label="New start" type="datetime-local" defaultValue={local(campaign.starts_at)} required />
+              <TextField id="rs-end" name="end" label="New end" type="datetime-local" defaultValue={local(campaign.ends_at)} required />
+              <Button type="submit" size="sm" variant="outline" disabled={act.busy}>Move hold</Button>
+            </form>
+          ) : <p className="text-sm text-muted-foreground">A contract already states this time. To change it, cancel and book again.</p>}
+        </div>
+      )}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { useAction, useLoad } from "@/lib/use-load";
 
 type Verification = { id: string; org_name: string; version: number; status: string; details: Record<string, string>; documents: { type: string; fileName: string }[]; created_at: string };
 type Product = { id: string; name: string; brand: string; sku: string; price_cents: number; category: string; description: string; selling_points: string[]; restricted_claims: string[] };
+type Org = { id: string; name: string; kind: string; status: string; members: number };
 type User = { id: string; name: string; email: string; locked: boolean; memberships: unknown[] };
 
 export default function AdminPage() {
@@ -20,7 +21,8 @@ export default function AdminPage() {
   const ver = useLoad(() => api<Verification[]>("admin/verifications?status=submitted"), "ver");
   const prods = useLoad(() => api<Product[]>("admin/products"), "prods");
   const users = useLoad(() => api<User[]>("admin/users"), "users");
-  const act = useAction(() => Promise.all([ver.reload(), prods.reload()]));
+  const orgs = useLoad(() => api<Org[]>("admin/orgs"), "orgs");
+  const act = useAction(() => Promise.all([ver.reload(), prods.reload(), orgs.reload()]));
   const [q, setQ] = useState("");
   const canDecide = me.user.is_super_admin;
   const post = (path: string, body: unknown) => () => api(path, { body });
@@ -40,6 +42,7 @@ export default function AdminPage() {
           <TabsTrigger value="ver">Brand verification ({ver.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="prod">Products ({prods.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="sellers">Seller checks</TabsTrigger>
+          <TabsTrigger value="orgs">Organizations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="ver" className="grid gap-3">
@@ -105,6 +108,38 @@ export default function AdminPage() {
                   </TableRow>
                 ))}
               </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="orgs" className="grid gap-4">
+          {canDecide && (
+            <Card>
+              <CardHeader><CardTitle>New Creator Hub organization</CardTitle><CardDescription>Brands sign up themselves. A studio operator is created here with its first Location Manager, who then invites the team.</CardDescription></CardHeader>
+              <CardContent>
+                <form className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" onSubmit={async (e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.currentTarget);
+                  const el = e.currentTarget;
+                  const email = String(f.get("manager")).trim();
+                  const ok = await act.run(async () => {
+                    const o = await api<{ id: string; name: string }>("admin/orgs", { body: { kind: "operator", name: String(f.get("name")).trim() } });
+                    await api(`admin/orgs/${o.id}/members`, { body: { email, role: "location_manager" } });
+                    return o;
+                  }, (o) => `${o.name} created with ${email} as Location Manager.`);
+                  if (ok) el.reset();
+                }}>
+                  <label className="grid gap-1 text-sm">Organization name<input name="name" required className="h-9 rounded-md border bg-background px-2" placeholder="Creator Hub" /></label>
+                  <label className="grid gap-1 text-sm">Location Manager’s account email<input name="manager" type="email" required className="h-9 rounded-md border bg-background px-2" /></label>
+                  <Button type="submit" disabled={act.busy}>Create</Button>
+                </form>
+              </CardContent>
+            </Card>
+          )}
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader><TableRow><TableHead>Organization</TableHead><TableHead>Kind</TableHead><TableHead>Status</TableHead><TableHead>Members</TableHead></TableRow></TableHeader>
+              <TableBody>{orgs.data?.map((o) => <TableRow key={o.id}><TableCell className="font-medium">{o.name}</TableCell><TableCell>{o.kind === "operator" ? "Creator Hub" : "Brand"}</TableCell><TableCell><Status value={o.status} /></TableCell><TableCell>{o.members}</TableCell></TableRow>)}</TableBody>
             </Table>
           </div>
         </TabsContent>
