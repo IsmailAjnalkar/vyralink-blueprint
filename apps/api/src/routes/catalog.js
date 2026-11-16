@@ -1,7 +1,7 @@
 // Products, campaigns, job marketplace, invitations, contracts, booth holds, cancellation, messages
 // (blueprint B05–B08, B12–B14, B17, C09–C12, BF02–BF08).
 import { setting, tx } from '../db.js';
-import { audit, bad, body, conflict, forbidden, member, notify, notFound, one, orgUsers, superAdmin, user, BRAND, OWNER } from '../http.js';
+import { audit, bad, body, conflict, forbidden, member, notify, notFound, one, orgUsers, platformStaff, superAdmin, user, BRAND, OWNER } from '../http.js';
 import { cancellationFee } from '../money.js';
 import { assertMove } from '../status.js';
 
@@ -114,7 +114,7 @@ export default async function catalog(app) {
   });
 
   app.get('/admin/products', async (req) => {
-    superAdmin(req);
+    platformStaff(req);
     return (await pool.query(`SELECT p.*, o.name AS brand FROM products p JOIN orgs o ON o.id = p.org_id WHERE p.status = COALESCE($1, 'pending_review') ORDER BY p.created_at`, [req.query.status ?? null])).rows;
   });
 

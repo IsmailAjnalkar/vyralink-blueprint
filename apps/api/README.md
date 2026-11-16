@@ -39,7 +39,7 @@ The tests reproduce the blueprint example: $6,000 GMV, 4 refunds → eligible $5
 
 | Area | Endpoints |
 |---|---|
-| Auth and account | `POST /auth/signup` (brand, seller or staff) · `POST /auth/login` · `POST /auth/logout` · `GET /me` |
+| Auth and account | All under `/v1`. `POST /auth/signup` (202, same answer for taken emails) · `POST /auth/verify-email` · `POST /auth/resend-verification` · `POST /auth/login` (lockout; returns `mfaRequired` + pending token when MFA is on) · `POST /auth/mfa/verify` · `POST /auth/mfa/setup` · `POST /auth/mfa/enable` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `GET /auth/sessions` · `DELETE /auth/sessions/:id` · `POST /auth/logout` · `POST /auth/logout-all` · `GET /me` · `POST/GET /orgs/current/invitations` · `POST /invitations/preview` · `POST /invitations/accept` · `GET /openapi.json` · `GET /health` · `GET /health/ready` |
 | Organization | `GET /orgs/current` · `GET/POST /orgs/current/members` · `PATCH/DELETE /orgs/current/members/:userId` · `GET/POST /orgs/current/verification` |
 | Seller | `GET/PUT /seller/profile` · `GET /academy/courses` · `GET/POST /academy/:course/assessment` (server-graded answers; 24 h retake wait) · `GET /seller/invitations` · `GET /seller/earnings` · `GET /seller/payouts` · `GET /jobs` · `POST /jobs/:campaignId/apply` |
 | Discovery | `GET /sellers` (filters: category, language, minGmvPerHourCents, verifiedOnly) · `GET /sellers/:id` |
@@ -65,7 +65,10 @@ The tests reproduce the blueprint example: $6,000 GMV, 4 refunds → eligible $5
 - Payout runs are serialized per organization and lock the ledger lines they claim, so a line can't be paid twice.
 - A brand’s dispute holds at most the seller’s unpaid pay for that session; one open dispute per session and type; disputes close 7 days after lock.
 - A fully signed booking can’t be replaced by another acceptance.
-- Error responses carry no database detail. Known gap: sign-up still says when an email already has an account; closing it needs email verification.
+- Error responses carry no database detail; sign-up, resend and password reset answer the same whether or not the email has an account.
+- Email must be verified before sign-in. 5 failed sign-ins lock the account for 15 minutes; auth routes are rate-limited per IP.
+- Platform admins, support admins and finance administrators must enroll in TOTP MFA; their sessions need the second factor. Secrets are encrypted at rest (AES-256-GCM, `APP_SECRET`).
+- Password reset signs out every session. Members join only by email invitation accepted with the invited account.
 
 ## Simulated in development
 
@@ -76,7 +79,6 @@ The tests reproduce the blueprint example: $6,000 GMV, 4 refunds → eligible $5
 ## Not built yet
 
 - Phase 2/3 features (TikTok Shop API sync, AI matching, retainers, instant payouts, multi-location reports, profitability, expenses). Their feature flags exist in `/admin/flags`.
-- Email invitations for people without accounts (members must sign up first), password reset, two-step verification.
 - Rescheduling a booking in place (cancel and re-hold instead); the 24-hour wait before retaking an assessment.
 - Real payment, identity and file-storage integrations.
 

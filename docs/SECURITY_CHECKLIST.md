@@ -14,10 +14,10 @@
 | Double-booking prevention in DB | Done | exclusion constraints; test |
 | Audit log for critical actions | Done | `audit_log` |
 | Secure cookies + CSRF | Missing | Phase 1 |
-| Email verification / password reset | Missing | Phase 1 |
-| MFA for privileged users | Missing | Phase 1 |
-| Rate limiting / lockout | Missing | Phase 1 |
-| Session revocation | Missing | Phase 1 |
+| Email verification / password reset | Done | `auth.test.js` |
+| MFA for privileged users | Done | TOTP; `auth.test.js`, flow test enrollment gate |
+| Rate limiting / lockout | Done | `auth.test.js` |
+| Session revocation | Done | `auth.test.js` |
 | Security headers (CSP, HSTS) | Missing | Phase 1 (web) |
 | Secure file uploads | Missing | Phase 6 |
 | Webhook signature + replay protection | Missing | Phase 6 |

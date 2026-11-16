@@ -5,17 +5,27 @@ import { after, before, test } from 'node:test';
 import pg from 'pg';
 import { buildApp } from '../src/app.js';
 import { COURSES } from '../src/academy.js';
+import { base32Decode, totp } from '../src/crypto.js';
 import { migrate } from '../src/db.js';
 
 const BASE = process.env.TEST_DB_BASE ?? 'postgres://postgres:postgres@127.0.0.1:5441';
 let app, pool;
 const T = {}; // tokens
+const MFA = {}; // TOTP secrets, for signing in again
 const id = {};
 
-async function call(method, url, { as, org, body } = {}) {
-  const res = await app.inject({ method, url, headers: { ...(as ? { authorization: `Bearer ${T[as]}` } : {}), ...(org ? { 'x-org-id': org } : {}) }, payload: body });
+async function call(method, url, { as, org, body, token } = {}) {
+  const bearer = token ?? (as ? T[as] : null);
+  const res = await app.inject({ method, url: `/v1${url}`, headers: { ...(bearer ? { authorization: `Bearer ${bearer}` } : {}), ...(org ? { 'x-org-id': org } : {}) }, payload: body });
   return { status: res.statusCode, body: res.body ? JSON.parse(res.body) : null };
 }
+/** The newest email sent to an address (read from the job queue before the worker scrubs it). */
+async function lastEmail(to) {
+  const { rows: [j] } = await pool.query(`SELECT payload FROM jobs WHERE kind = 'email' AND lower(payload->>'to') = lower($1) ORDER BY id DESC LIMIT 1`, [to]);
+  return j?.payload;
+}
+const tokenIn = (mail) => mail.text.match(/token=([\w-]+)/)[1];
+const code = (key) => totp(base32Decode(MFA[key]));
 async function ok(method, url, opts, expect = [200, 201]) {
   const r = await call(method, url, opts);
   assert.ok([].concat(expect).includes(r.status), `${method} ${url} → ${r.status} ${JSON.stringify(r.body)}`);
@@ -30,7 +40,7 @@ before(async () => {
   await admin.end();
   pool = new pg.Pool({ connectionString: `${BASE}/vyralink_test` });
   await migrate(pool);
-  app = buildApp({ pool });
+  app = buildApp({ pool, rateLimitScale: 1000 }); // limits themselves are tested in auth.test.js
   await app.ready();
 });
 after(async () => {
@@ -38,10 +48,17 @@ after(async () => {
   await pool?.end();
 });
 
+/** Sign up, confirm the email from the outbox, and return { user, orgId } like the old one-step sign-up did. */
 const signup = async (key, kind, name, extra = {}) => {
-  const r = await ok('POST', '/auth/signup', { body: { email: `${key}@example.com`, password: 'correct-horse-battery', name, kind, ...extra } });
-  T[key] = r.token;
-  return r;
+  const email = `${key}@example.com`;
+  await ok('POST', '/auth/signup', { body: { email, password: 'correct-horse-battery', name, kind, ...extra } }, 202);
+  T[key] = (await ok('POST', '/auth/verify-email', { body: { token: tokenIn(await lastEmail(email)) } })).token;
+  const me = await ok('GET', '/me', { as: key });
+  return { user: me.user, orgId: me.memberships[0]?.org_id ?? null };
+};
+const enableMfa = async (key) => {
+  MFA[key] = (await ok('POST', '/auth/mfa/setup', { as: key })).secret;
+  await ok('POST', '/auth/mfa/enable', { as: key, body: { code: code(key) } });
 };
 
 test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', async () => {
@@ -54,6 +71,9 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   for (const [k, n] of [['rosa', 'Rosa Diaz'], ['jordan', 'Jordan P.'], ['sam', 'Sam K.'], ['alex', 'Alex M.'], ['bea', 'Bea Second']]) await signup(k, 'staff', n);
   const taylor = await signup('taylor', 'staff', 'Taylor Reed');
   await pool.query('UPDATE users SET is_super_admin = true WHERE id = $1', [taylor.user.id]);
+  // Platform admins and finance administrators work only after two-step verification.
+  assert.equal((await call('GET', '/admin/orgs', { as: 'taylor' })).body.code, 'mfa_enrollment_required');
+  for (const k of ['taylor', 'alex', 'bea']) await enableMfa(k);
   const brand = { as: 'maya', org: id.brand };
 
   // wrong password and unknown email answer the same way
@@ -70,7 +90,9 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   id.booth = (await ok('POST', `/locations/${loc.id}/booths`, { ...rosa, body: { name: 'Beauty Booth 01', type: 'beauty', categories: ['beauty'] } })).id;
 
   // ---- brand verification (BF01): publishing is blocked until verified
-  await ok('POST', '/orgs/current/members', { ...brand, body: { email: 'leo@example.com', role: 'brand_marketing_manager' } });
+  // Members join by email invitation, accepted with the invited account.
+  await ok('POST', '/orgs/current/invitations', { ...brand, body: { email: 'leo@example.com', role: 'brand_marketing_manager' } });
+  await ok('POST', '/invitations/accept', { as: 'leo', body: { token: tokenIn(await lastEmail('leo@example.com')) } });
   const ver = await ok('POST', '/orgs/current/verification', { ...brand, body: { details: { legalName: 'GlowSkin Beauty LLC' }, documents: [{ type: 'formation', fileName: 'formation.pdf' }] } });
   await ok('POST', `/admin/verifications/${ver.id}/decision`, { as: 'taylor', body: { decision: 'approve' } });
 
@@ -252,9 +274,11 @@ test('permissions: unauthenticated, wrong org, wrong role', async () => {
   assert.equal((await call('GET', `/campaigns/${id.campaign}`, { as: 'rosa', org: id.ops })).status, 403);
   assert.equal((await call('GET', '/admin/orgs', { as: 'maya' })).status, 403);
   assert.equal((await call('DELETE', `/orgs/current/members/${(await ok('GET', '/me', { as: 'maya' })).user.id}`, { as: 'maya', org: id.brand })).body.code, 'last_owner');
-  // database detail never leaks in errors
+  // signing up with a taken email looks exactly like a new sign-up (no account probing)
+  const fresh = await call('POST', '/auth/signup', { body: { email: 'nobody-yet@example.com', password: 'correct-horse-battery', name: 'New', kind: 'seller' } });
   const dup = await call('POST', '/auth/signup', { body: { email: 'maya@example.com', password: 'correct-horse-battery', name: 'Again', kind: 'seller' } });
-  assert.deepEqual([dup.status, dup.body.detail], [409, undefined]);
+  assert.deepEqual([dup.status, dup.body], [fresh.status, fresh.body]);
+  assert.match((await lastEmail('maya@example.com')).subject, /tried to sign up/);
 });
 
 test('suspended organizations are read-only', async () => {

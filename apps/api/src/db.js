@@ -23,8 +23,19 @@ export async function tx(pool, fn) {
   }
 }
 
+/** Baseline schema (idempotent), then numbered migrations in order, each applied once and recorded. */
 export async function migrate(pool) {
   await pool.query(fs.readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'));
+  await pool.query('CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
+  const dir = new URL('../migrations/', import.meta.url);
+  const files = fs.readdirSync(dir).filter((f) => /^\d+_.*\.sql$/.test(f)).sort();
+  const applied = new Set((await pool.query('SELECT name FROM schema_migrations')).rows.map((r) => r.name));
+  for (const f of files.filter((f) => !applied.has(f))) {
+    await tx(pool, async (db) => {
+      await db.query(fs.readFileSync(new URL(f, dir), 'utf8'));
+      await db.query('INSERT INTO schema_migrations (name) VALUES ($1)', [f]);
+    });
+  }
 }
 
 export async function setting(db, key) {

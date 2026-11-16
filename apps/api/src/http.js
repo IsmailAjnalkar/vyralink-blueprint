@@ -46,13 +46,21 @@ export function body(spec) {
 
 // ---------------------------------------------------------------- roles
 export const BRAND = ['brand_owner', 'brand_marketing_manager'];
+export const BRAND_BILLING = ['brand_owner', 'brand_finance'];
 export const OWNER = ['brand_owner'];
 export const OPS = ['location_manager', 'producer', 'inventory', 'finance_admin'];
+/** Roles that move money or see all finance data: a second factor is required. */
+const MFA_ROLES = ['finance_admin'];
 
 /** Requires a signed-in user. */
 export function user(req) {
   if (!req.user) throw new HttpError(401, 'Sign in first', 'unauthenticated');
   return req.user;
+}
+/** Privileged access needs a session that passed MFA; users without MFA are told to enroll first. */
+export function requireMfa(req) {
+  if (req.session?.mfaPassed) return;
+  throw new HttpError(403, req.user?.mfa_enabled ? 'Sign in again with your authenticator code' : 'Set up two-step verification first (Settings → Security)', req.user?.mfa_enabled ? 'mfa_required' : 'mfa_enrollment_required');
 }
 /** Requires membership of the org named by the x-org-id header, with one of the roles. Returns { orgId, role }. */
 export function member(req, roles) {
@@ -60,11 +68,21 @@ export function member(req, roles) {
   const m = req.membership;
   if (!m) throw forbidden('Choose an organization (x-org-id header) you belong to');
   if (roles && !roles.includes(m.role)) throw forbidden(`This needs one of: ${roles.join(', ')}`);
+  if (MFA_ROLES.includes(m.role)) requireMfa(req);
   return m; // suspended organizations are refused earlier, in app.js onRequest (org actions always carry x-org-id)
 }
+/** Platform changes: super administrators only, with MFA. */
 export function superAdmin(req) {
   if (!user(req).is_super_admin) throw forbidden('Platform administrators only');
+  requireMfa(req);
   return req.user;
+}
+/** Platform read-only views: super administrators and support administrators, with MFA. */
+export function platformStaff(req) {
+  const u = user(req);
+  if (!u.is_super_admin && !u.is_support_admin) throw forbidden('Platform staff only');
+  requireMfa(req);
+  return u;
 }
 
 // ---------------------------------------------------------------- side effects inside a transaction

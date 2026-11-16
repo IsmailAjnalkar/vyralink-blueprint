@@ -2,7 +2,7 @@
 // No escrow: brand charges and seller payouts are separate payment-provider flows; GMV is never revenue.
 // Every finance record is scoped to the Creator Hub organization that ran the booking.
 import { setting, tx } from '../db.js';
-import { audit, bad, body, conflict, member, notify, notFound, one, orgUsers, superAdmin, user, BRAND } from '../http.js';
+import { audit, bad, body, conflict, member, notify, notFound, one, orgUsers, superAdmin, user, BRAND, BRAND_BILLING } from '../http.js';
 import { loadSettlement, lockResults } from '../settle.js';
 import { assertMove } from '../status.js';
 
@@ -43,14 +43,14 @@ export default async function finance(app) {
 
   // ---------------------------------------------------------------- invoices
   app.get('/invoices', async (req) => {
-    const m = member(req, ['brand_owner', ...FIN]);
+    const m = member(req, [...BRAND_BILLING, ...FIN]);
     const scope = m.kind === 'brand' ? 'i.org_id = $1' : OWNS('i.booking_id', '$1');
     const { rows } = await pool.query(`SELECT i.*, o.name AS brand FROM invoices i JOIN orgs o ON o.id = i.org_id WHERE ${scope} AND ($2::text IS NULL OR i.status = $2) ORDER BY i.created_at DESC`, [m.orgId, req.query.status ?? null]);
     return rows;
   });
 
   app.get('/invoices/:id', async (req) => {
-    const m = member(req, ['brand_owner', ...FIN]);
+    const m = member(req, [...BRAND_BILLING, ...FIN]);
     const scope = m.kind === 'brand' ? 'i.org_id = $2' : OWNS('i.booking_id', '$2');
     return one(pool, `SELECT i.* FROM invoices i WHERE i.id = $1 AND ${scope}`, [req.params.id, m.orgId], 'Invoice not found');
   });
@@ -70,7 +70,7 @@ export default async function finance(app) {
     return tx(pool, async (db) => {
       const i = await finInvoice(db, req, req.params.id);
       await audit(db, req, 'invoice.payment_failed', 'invoice', i.id, req.body);
-      await notify(db, await orgUsers(db, i.org_id, ['brand_owner']), 'billing', `Payment for ${i.number} failed (${req.body.reason}). Update your payment method; we’ll retry.`);
+      await notify(db, await orgUsers(db, i.org_id, BRAND_BILLING), 'billing', `Payment for ${i.number} failed (${req.body.reason}). Update your payment method; we’ll retry.`);
       return { ok: true };
     });
   });
@@ -78,7 +78,7 @@ export default async function finance(app) {
   app.post('/invoices/sweep-overdue', async (req) => {
     const m = member(req, FIN);
     const { rows } = await pool.query(`UPDATE invoices i SET status = 'overdue' WHERE i.status = 'issued' AND i.due_at < now() AND ${OWNS('i.booking_id', '$1')} RETURNING id, number, org_id`, [m.orgId]);
-    for (const r of rows) await notify(pool, await orgUsers(pool, r.org_id, ['brand_owner']), 'billing', `${r.number} is overdue`);
+    for (const r of rows) await notify(pool, await orgUsers(pool, r.org_id, BRAND_BILLING), 'billing', `${r.number} is overdue`);
     return { overdue: rows.length };
   });
 
@@ -249,7 +249,7 @@ export default async function finance(app) {
       if (['invoice', 'cancellation_fee'].includes(b.type)) {
         if (!b.invoiceId) throw bad('Say which invoice');
         const inv = await one(db, 'SELECT * FROM invoices WHERE id = $1 FOR UPDATE', [b.invoiceId], 'Invoice not found');
-        if (req.membership?.orgId !== inv.org_id || !BRAND.includes(req.membership.role)) throw notFound('Invoice not found');
+        if (req.membership?.orgId !== inv.org_id || !BRAND_BILLING.includes(req.membership.role)) throw notFound('Invoice not found');
         if (b.bookingId && b.bookingId !== inv.booking_id) throw bad('That session doesn’t belong to this invoice');
         assertMove('invoice', inv.status, 'disputed');
         await db.query(`UPDATE invoices SET status = 'disputed' WHERE id = $1`, [inv.id]); // amount paused, not cancelled

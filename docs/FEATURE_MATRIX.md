@@ -5,13 +5,13 @@ Status: **Working** (built and tested), **Partial**, **Missing**, **Blocked** (n
 | Feature | API | UI | Notes |
 |---|---|---|---|
 | Registration / login / logout | Working | Missing | bearer tokens only |
-| Email verification | Missing | Missing | Phase 1 |
-| Password reset | Missing | Missing | Phase 1 |
-| MFA for privileged users | Missing | Missing | Phase 1 |
-| Rate limiting / lockout | Missing | — | Phase 1 |
-| Sessions: expiry, revocation | Partial | Missing | expiry yes; revocation list missing |
-| Organizations, members, roles | Working | Missing | add Support Admin, Brand Finance |
-| Organization invitations by email | Missing | Missing | members must already have accounts |
+| Email verification | Working | Missing | dev outbox; real email **Blocked** (no provider) |
+| Password reset | Working | Missing | signs out every session |
+| MFA for privileged users | Working | Missing | TOTP, secrets encrypted at rest |
+| Rate limiting / lockout | Working | — | |
+| Sessions: expiry, revocation | Working | Missing | |
+| Organizations, members, roles | Working | Missing | incl. Support Admin, Brand Finance |
+| Organization invitations by email | Working | Missing | |
 | Brand verification | Working | Missing | |
 | Products (incl. claims review) | Working | Missing | image upload missing |
 | Campaigns (LIVE, LIVE DROP) + approval | Working | Missing | UGC/influencer/affiliate/retainer types missing |

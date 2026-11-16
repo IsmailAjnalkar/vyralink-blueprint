@@ -2,17 +2,8 @@
 // (blueprint B01–B03, B18, C01–C04, C07, C27, A01–A04, A09–A12).
 import { tx } from '../db.js';
 import { COURSES, PASS_PCT, RETAKE_WAIT_HOURS, grade } from '../academy.js';
-import { HttpError, audit, bad, body, checkPassword, conflict, forbidden, hashPassword, member, newToken, notify, notFound, one, orgUsers, sha256, superAdmin, user, BRAND } from '../http.js';
-
-const SESSION_DAYS = 30;
-const BRAND_ROLES = ['brand_owner', 'brand_marketing_manager'];
-const OPS_ROLES = ['location_manager', 'producer', 'inventory', 'finance_admin'];
-
-async function startSession(db, userId) {
-  const token = newToken();
-  await db.query(`INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, now() + interval '${SESSION_DAYS} days')`, [sha256(token), userId]);
-  return token;
-}
+import { audit, bad, body, conflict, forbidden, member, notify, notFound, one, orgUsers, platformStaff, superAdmin, user, BRAND } from '../http.js';
+import { allowedRoles, managerRoles } from './auth.js';
 
 /** Verified track record from completed sessions on Vyralink (never self-reported). */
 export const SELLER_STATS_SQL = `
@@ -35,46 +26,6 @@ export const SELLER_STATS_SQL = `
 export default async function identity(app) {
   const { pool } = app;
 
-  // ---------------------------------------------------------------- auth
-  app.post('/auth/signup', { schema: body({ email: { type: 'string', format: 'email', maxLength: 320 }, password: { type: 'string', minLength: 12, maxLength: 200 }, name: 'string', kind: { enum: ['brand', 'seller', 'staff'] }, companyName: 'string?' }) }, async (req, reply) => {
-    const b = req.body;
-    if (b.kind === 'brand' && !b.companyName) throw bad('Company name is required for a brand account');
-    const out = await tx(pool, async (db) => {
-      const { rows: [u] } = await db.query('INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, name', [b.email, b.name, await hashPassword(b.password)]);
-      let orgId = null;
-      if (b.kind === 'brand') {
-        ({ rows: [{ id: orgId }] } = await db.query(`INSERT INTO orgs (kind, name) VALUES ('brand', $1) RETURNING id`, [b.companyName]));
-        await db.query(`INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'brand_owner')`, [orgId, u.id]);
-      } else if (b.kind === 'seller') {
-        await db.query('INSERT INTO seller_profiles (user_id, display_name) VALUES ($1, $2)', [u.id, b.name]);
-      } // staff: plain account, added to a Creator Hub organization by its manager or an admin
-      await audit(db, { user: u, membership: orgId ? { orgId } : null, ip: req.ip }, 'user.signup', 'user', u.id, { kind: b.kind });
-      return { user: u, orgId, token: await startSession(db, u.id) };
-    });
-    return reply.code(201).send(out);
-  });
-
-  app.post('/auth/login', { schema: body({ email: 'string', password: 'string' }) }, async (req) => {
-    const { rows: [u] } = await pool.query('SELECT id, password_hash, locked FROM users WHERE lower(email) = lower($1)', [req.body.email]);
-    // Same answer for unknown email and wrong password (no account probing).
-    if (!u || !(await checkPassword(req.body.password, u.password_hash))) throw new HttpError(401, 'Email or password is wrong', 'invalid_credentials');
-    if (u.locked) throw forbidden('This account is locked. Contact support.');
-    return { token: await startSession(pool, u.id) };
-  });
-
-  app.post('/auth/logout', async (req) => {
-    const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-    await pool.query('DELETE FROM sessions WHERE token_hash = $1', [sha256(token)]);
-    return { ok: true };
-  });
-
-  app.get('/me', async (req) => {
-    const u = user(req);
-    const { rows: memberships } = await pool.query('SELECT o.id AS org_id, o.name, o.kind, o.status, m.role FROM memberships m JOIN orgs o ON o.id = m.org_id WHERE m.user_id = $1 ORDER BY o.name', [u.id]);
-    const { rows: [seller] } = await pool.query('SELECT * FROM seller_profiles WHERE user_id = $1', [u.id]);
-    return { user: u, memberships, sellerProfile: seller ?? null };
-  });
-
   // ---------------------------------------------------------------- organization, members, verification
   app.get('/orgs/current', async (req) => {
     const m = member(req);
@@ -87,23 +38,7 @@ export default async function identity(app) {
     return rows;
   });
 
-  const managerRole = (kind) => (kind === 'brand' ? ['brand_owner'] : ['location_manager']);
-  const allowedRoles = (kind) => (kind === 'brand' ? BRAND_ROLES : OPS_ROLES);
-
-  // ponytail: adds an existing account; email invitations for people without accounts come later.
-  app.post('/orgs/current/members', { schema: body({ email: 'string', role: 'string' }) }, async (req, reply) => {
-    const m = member(req, null);
-    if (!managerRole(m.kind).includes(m.role)) throw forbidden('Only the organization’s owner or location manager can add members');
-    if (!allowedRoles(m.kind).includes(req.body.role)) throw bad(`Role must be one of: ${allowedRoles(m.kind).join(', ')}`);
-    return tx(pool, async (db) => {
-      const u = await one(db, 'SELECT id FROM users WHERE lower(email) = lower($1)', [req.body.email], 'No account with that email yet. Ask them to sign up first.');
-      await db.query('INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, $3)', [m.orgId, u.id, req.body.role]);
-      await audit(db, req, 'member.added', 'user', u.id, { role: req.body.role });
-      await notify(db, [u.id], 'membership', `You were added to an organization as ${req.body.role}`);
-      reply.code(201);
-      return { userId: u.id, role: req.body.role };
-    });
-  });
+  const managerRole = managerRoles; // members join by invitation (routes/auth.js)
 
   app.patch('/orgs/current/members/:userId', { schema: body({ role: 'string' }) }, async (req) => {
     const m = member(req);
@@ -238,7 +173,7 @@ export default async function identity(app) {
 
   // ---------------------------------------------------------------- admin console
   app.get('/admin/verifications', async (req) => {
-    superAdmin(req);
+    platformStaff(req);
     const { rows } = await pool.query(`SELECT v.*, o.name AS org_name FROM verifications v JOIN orgs o ON o.id = v.org_id WHERE ($1::text IS NULL OR v.status = $1) ORDER BY v.created_at`, [req.query.status ?? null]);
     return rows;
   });
@@ -282,7 +217,7 @@ export default async function identity(app) {
   });
 
   app.get('/admin/orgs', async (req) => {
-    superAdmin(req);
+    platformStaff(req);
     const { rows } = await pool.query(`SELECT o.*, (SELECT count(*) FROM memberships m WHERE m.org_id = o.id)::int AS members FROM orgs o ORDER BY o.name`);
     return rows;
   });
@@ -300,7 +235,7 @@ export default async function identity(app) {
   });
 
   app.get('/admin/users', async (req) => {
-    superAdmin(req);
+    platformStaff(req);
     const { rows } = await pool.query(`SELECT u.id, u.email, u.name, u.is_super_admin, u.locked,
       COALESCE(json_agg(json_build_object('orgId', m.org_id, 'role', m.role)) FILTER (WHERE m.org_id IS NOT NULL), '[]') AS memberships
       FROM users u LEFT JOIN memberships m ON m.user_id = u.id GROUP BY u.id ORDER BY u.name`);
@@ -328,7 +263,7 @@ export default async function identity(app) {
   });
 
   app.get('/admin/flags', async (req) => {
-    superAdmin(req);
+    platformStaff(req);
     return (await pool.query('SELECT * FROM feature_flags ORDER BY key')).rows;
   });
   app.put('/admin/flags/:key', { schema: body({ enabled: 'boolean', orgIds: 'uuids?' }) }, async (req) => {
@@ -340,7 +275,7 @@ export default async function identity(app) {
   });
 
   app.get('/admin/settings', async (req) => {
-    superAdmin(req);
+    platformStaff(req);
     return Object.fromEntries((await pool.query('SELECT key, value FROM settings ORDER BY key')).rows.map((r) => [r.key, r.value]));
   });
   app.put('/admin/settings/:key', { schema: body({ value: {} }) }, async (req) => {
@@ -352,7 +287,7 @@ export default async function identity(app) {
   });
 
   app.get('/admin/audit', async (req) => {
-    superAdmin(req);
+    platformStaff(req);
     const { rows } = await pool.query(
       `SELECT * FROM audit_log WHERE ($1::text IS NULL OR action LIKE $1 || '%') AND ($2::uuid IS NULL OR org_id = $2) ORDER BY id DESC LIMIT LEAST(COALESCE($3::int, 200), 1000)`,
       [req.query.action ?? null, req.query.orgId ?? null, req.query.limit ?? null]);
