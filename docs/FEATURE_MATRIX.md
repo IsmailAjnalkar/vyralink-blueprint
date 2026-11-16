@@ -39,5 +39,6 @@ Status: **Working** (built and tested), **Partial**, **Missing**, **Blocked** (n
 | TikTok Shop API | Blocked | — | no partner access; CSV import works; sandbox demo-order provider for development (`ORDERS_PROVIDER=sandbox`) |
 | Stripe | Blocked | — | no account; sandbox provider; signed webhook handler ready |
 | File storage | Partial | Working | local-disk adapter (product images, verification documents); S3 **Blocked** (no bucket) |
-| Matching (rules-based, explained) | Missing | Missing | Phase 7 |
+| Matching (rules-based, explained) | Working | Working | published weights; reasons per point; excluded sellers counted, never named |
+| Analytics (brand, studio) | Working | Working | conversion/viewers need TikTok data (Unavailable) |
 | Docker / CI / staging | Missing | — | Phase 9 |

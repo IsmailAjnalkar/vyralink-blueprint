@@ -510,3 +510,40 @@ test("the admin sees which integrations are real, sandbox or blocked", async () 
     await expect(adminPage.getByRole("row", { name: new RegExp(`^${name} ${provider}`) })).toContainText(status);
   }
 });
+
+// ---------------------------------------------------------------- Phase 7: analytics and matching
+test("brand analytics match the settled figures; chart has a table view", async () => {
+  const b = brandPage;
+  await b.goto("/app/analytics");
+  const tile = (name: string) => card(b, name).filter({ has: b.getByText(name, { exact: true }) }).first();
+  await expect(tile("GMV")).toContainText("$320.00"); // 8 orders × $40 attributed
+  await expect(tile("Net sales")).toContainText("$280.00"); // one $40 refund
+  await expect(tile("Campaign cost")).toContainText("$764.60"); // $750 production + $19.60 performance − $5.00 credit
+  await expect(b.getByRole("img", { name: /Vitamin C LIVE — GlowSkin: \$320\.00/ })).toBeVisible();
+  await b.screenshot({ path: "test-results/screens/brand-analytics.png", fullPage: true });
+  await b.getByRole("button", { name: "Show as table" }).click();
+  await expect(b.locator("figure table")).toContainText("$320.00");
+  await expect(b.getByRole("row", { name: /Vitamin C LIVE — GlowSkin/ }).last()).toContainText("Final · Imported");
+});
+
+test("studio analytics show booth use and incidents", async () => {
+  await rosaPage.goto("/app/studio/analytics");
+  await expect(card(rosaPage, "Completed sessions")).toContainText("1");
+  await expect(rosaPage.getByRole("img", { name: /Beauty Booth 02/ })).toBeVisible();
+  await rosaPage.screenshot({ path: "test-results/screens/studio-analytics.png", fullPage: true });
+  await expect(rosaPage.getByRole("row", { name: /compliance/ })).toContainText("high");
+});
+
+test("recommended sellers come with the reason for every point", async () => {
+  const b = brandPage;
+  await b.goto("/app/campaigns");
+  await b.getByRole("link", { name: "Overlap test" }).click();
+  const rec = card(b, "Recommended sellers");
+  await expect(rec).toContainText("follower counts are not used");
+  const sarahRow = rec.locator("li", { hasText: sarah.name });
+  await expect(sarahRow).toContainText("/ 100");
+  await sarahRow.getByText("Why this score").click();
+  await expect(sarahRow).toContainText("Sells skincare");
+  await expect(sarahRow).toContainText("Has the required training");
+  await expect(sarahRow.getByRole("button", { name: "Invite" })).toHaveCount(0); // draft: publish before inviting
+});

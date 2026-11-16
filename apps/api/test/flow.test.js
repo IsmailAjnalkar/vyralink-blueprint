@@ -181,6 +181,15 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   // A signed booking can't be overwritten by inviting someone else.
   const priya = await signup('priya', 'seller', 'Priya Nair');
   assert.equal((await call('POST', `/campaigns/${camp.id}/invitations`, { ...brand, body: { sellerId: priya.user.id } })).body.code, 'already_booked');
+  // Matching: an overlapping campaign leaves the booked seller out, counted but not named; the own campaign keeps her.
+  const overlapping = await ok('GET', `/campaigns/${other.id}/matches`, brand);
+  assert.ok(!overlapping.ranked.some((r) => r.sellerId === id.sarah));
+  assert.deepEqual(overlapping.excluded, [{ reason: 'Already booked at this time', count: 1 }]);
+  assert.ok(overlapping.ranked.some((r) => r.name === 'Priya Nair'));
+  const own = (await ok('GET', `/campaigns/${camp.id}/matches`, brand)).ranked.find((r) => r.sellerId === id.sarah);
+  assert.equal(own.invitation, 'accepted');
+  assert.ok(own.ready && own.parts.find((p) => p.rule === 'category').points === 25);
+  assert.equal((await call('GET', `/campaigns/${camp.id}/matches`, { as: 'sarah' })).status, 403);
 
   // ---- studio confirmation needs a producer (BF08, BF10)
   assert.equal((await call('POST', `/bookings/${id.booking}/confirm`, rosa)).body.code, 'no_producer');
@@ -359,6 +368,16 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   const brandCsv = (await exportCsv('invoices', brand)).body;
   assert.match(brandCsv, /^number,brand,campaign,kind/);
   assert.ok(brandCsv.includes('750.00') && !brandCsv.includes('evil'));
+
+  // ---- analytics agree with the campaign report
+  const brandStats = await ok('GET', '/analytics/brand', brand);
+  const row = brandStats.campaigns.find((r) => r.campaignId === camp.id);
+  const rep2 = await ok('GET', `/campaigns/${camp.id}/report`, brand);
+  assert.deepEqual([row.gmvCents, row.orders, row.netSalesCents], [rep2.results.gmvCents, rep2.results.orders, rep2.results.netSalesCents]);
+  assert.equal(row.source, 'Imported');
+  const studioStats = await ok('GET', '/analytics/studio', rosa);
+  assert.equal(studioStats.booths.find((b) => b.name === 'Beauty Booth 02').sessions, 1);
+  assert.equal((await call('GET', '/analytics/studio', { as: 'jordan', org: id.ops })).status, 403); // producers don't see business analytics
 
   // ---- audit trail and cancellation quote
   assert.ok((await ok('GET', '/admin/audit?action=results.', { as: 'taylor' })).length >= 2);

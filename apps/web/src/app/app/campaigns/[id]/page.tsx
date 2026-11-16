@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Empty, Messages, PageHeader, Status, when } from "@/components/bits";
 import { TextField } from "@/components/form";
 import { useSession } from "@/components/shell";
+import { Recommendations } from "@/components/matches";
 import { SessionResults } from "@/components/settlement";
 import { Thread } from "@/components/thread";
 import type { Product } from "@/components/product-form";
@@ -162,6 +163,9 @@ export default function CampaignPage() {
         </Card>
       )}
 
+      {c && !["completed", "cancelled", "archived", "in_progress"].includes(c.status) && !c.contracts.some((k) => !k.void && k.brand_signed_at && k.seller_signed_at) && (
+        <Recommendations campaignId={c.id} org={org} canInvite={["published", "recruiting"].includes(c.status)} onInvited={d.reload} />
+      )}
       {c?.bookings.some((b) => b.status === "completed") && <Button asChild variant="outline" className="w-fit"><Link href={`/app/campaigns/${c.id}/report`}>Campaign report</Link></Button>}
       {c?.bookings.filter((b) => b.status === "completed").map((b) => <SessionResults key={b.id} bookingId={b.id} org={org} canImport={false} />)}
       {c && <Thread campaignId={c.id} org={org} />}

@@ -4,11 +4,12 @@ import { requireMe, serverApi, type Me, type Membership } from "@/lib/session";
 /** Navigation for the current context. Only screens that exist are listed; each phase adds its own. */
 function navFor(me: Me, current: Membership | null, unread: number): NavItem[] {
   const brand: NavItem[] = current?.kind === "brand"
-    ? [{ href: "/app/campaigns", label: "Campaigns" }, ...(["brand_owner", "brand_finance"].includes(current.role) ? [{ href: "/app/billing", label: "Billing" }] : []), { href: "/app/products", label: "Products" }, { href: "/app/sellers", label: "Find sellers" }, { href: "/app/verification", label: "Verification" }]
+    ? [{ href: "/app/campaigns", label: "Campaigns" }, { href: "/app/analytics", label: "Analytics" }, ...(["brand_owner", "brand_finance"].includes(current.role) ? [{ href: "/app/billing", label: "Billing" }] : []), { href: "/app/products", label: "Products" }, { href: "/app/sellers", label: "Find sellers" }, { href: "/app/verification", label: "Verification" }]
     : [];
   const finance: NavItem[] = current?.role === "finance_admin"
     ? [{ href: "/app/finance", label: "Finance" }, { href: "/app/finance/invoices", label: "Invoices" }, { href: "/app/finance/ledger", label: "Seller ledger" }, { href: "/app/finance/payouts", label: "Payout runs" }, { href: "/app/finance/disputes", label: "Disputes" }]
     : current?.role === "location_manager" ? [{ href: "/app/finance/ledger", label: "Approvals" }] : [];
+  const studioStats: NavItem[] = current?.kind === "operator" && ["location_manager", "finance_admin"].includes(current.role) ? [{ href: "/app/studio/analytics", label: "Studio analytics" }] : [];
   const studio: NavItem[] = current?.kind === "operator" && current.role !== "finance_admin"
     ? [{ href: "/app/studio", label: "Today" }, { href: "/app/studio/live", label: "LIVE control center" }, { href: "/app/studio/bookings", label: "Bookings" }, { href: "/app/studio/locations", label: "Locations" }]
     : [];
@@ -21,6 +22,7 @@ function navFor(me: Me, current: Membership | null, unread: number): NavItem[] {
     ...brand,
     ...studio,
     ...finance,
+    ...studioStats,
     ...seller,
     ...admin,
     ...(current ? [{ href: "/app/settings/team", label: "Team" }] : []),
