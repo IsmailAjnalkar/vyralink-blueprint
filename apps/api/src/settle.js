@@ -1,5 +1,5 @@
 // Turns a session's imported orders + agreed terms into ledger lines and invoices (blueprint F05, C21, BF16, BF17).
-import { one } from './http.js';
+import { HttpError, one } from './http.js';
 import { dollars, settle } from './money.js';
 
 export async function loadSettlement(db, bookingId) {
@@ -52,6 +52,7 @@ export async function adjustAfterLock(db, bookingId, actorId) {
   for (const [kind, target] of [['commission', s.commissionCents], ['bonus', s.bonusCents]]) {
     const reason = `refund_after_lock:${kind}`;
     const delta = target - (await sumLines(kind, reason));
+    if (delta > 0) throw new HttpError(409, 'After lock, refunds can only lower pay; raising it needs a ledger adjustment with approval', 'increase_after_lock');
     if (delta !== 0) {
       await db.query(`INSERT INTO ledger_entries (seller_id, booking_id, kind, basis, amount_cents, status, reason, created_by) VALUES ($1, $2, 'adjustment', $3, $4, 'locked', $5, $6)`,
         [b.seller_id, bookingId, `Refund after lock: ${kind} now ${dollars(target)}`, delta, reason, actorId]);
@@ -60,6 +61,7 @@ export async function adjustAfterLock(db, bookingId, actorId) {
   }
   const { rows: [{ t: perfNow }] } = await db.query(`SELECT COALESCE(sum(amount_cents), 0)::int AS t FROM invoices WHERE booking_id = $1 AND (kind = 'performance' OR (kind = 'credit_note' AND basis LIKE 'Refund after lock%'))`, [bookingId]);
   const perfDelta = s.performanceFeeCents - perfNow;
+  if (perfDelta > 0) throw new HttpError(409, 'After lock, refunds can only lower fees', 'increase_after_lock');
   if (perfDelta !== 0) {
     await db.query(`INSERT INTO invoices (number, org_id, campaign_id, booking_id, kind, basis, amount_cents, status, issued_at) VALUES ('CR-' || nextval('invoice_number_seq'), $1, $2, $3, 'credit_note', $4, $5, 'issued', now())`,
       [b.brand_org, b.campaign_id, bookingId, `Refund after lock: ${terms.performance_fee_bps / 100}% × eligible now ${dollars(s.eligibleCents)}`, perfDelta]);

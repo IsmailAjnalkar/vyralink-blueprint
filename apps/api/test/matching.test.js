@@ -21,12 +21,11 @@ test('verified results and reliability rank first; every rule explains its point
   assert.ok(ranked.every((r) => r.parts.every((p) => p.reason.length > 5)));
 });
 
-test('missing training, rate above budget and category mismatch cost points; paused, busy and wrong category are excluded', () => {
+test('missing training, rate above budget and category mismatch cost points; paused and wrong category are excluded', () => {
   const { ranked, excluded } = rankSellers([
     seller({ display_name: 'Untrained Uma', certificates: [] }),
     seller({ display_name: 'Pricey Pia', rate_cents: 3500 }),
     seller({ display_name: 'Very Pricey Vic', rate_cents: 5000 }),
-    seller({ display_name: 'Busy Bo', busy: true }),
     seller({ display_name: 'Paused Pam', paused: true }),
     seller({ display_name: 'Fashion Fay', categories: ['fashion'] }),
   ], { ...campaign, required_category: null });
@@ -36,7 +35,7 @@ test('missing training, rate above budget and category mismatch cost points; pau
   assert.equal(pts('Pricey Pia', 'rate').points, 5);
   assert.equal(pts('Very Pricey Vic', 'rate').points, 0);
   assert.equal(pts('Fashion Fay', 'category').points, 0);
-  assert.deepEqual(excluded.map((e) => [e.seller.display_name, e.reason]), [['Busy Bo', 'Already booked at this time'], ['Paused Pam', 'Paused']]);
+  assert.deepEqual(excluded.map((e) => [e.seller.display_name, e.reason]), [['Paused Pam', 'Paused']]);
 
   const strict = rankSellers([seller({ display_name: 'Fashion Fay', categories: ['fashion'] })], { ...campaign, required_category: 'Skincare' });
   assert.match(strict.excluded[0].reason, /required category/);

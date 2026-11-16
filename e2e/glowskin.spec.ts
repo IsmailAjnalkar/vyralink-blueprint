@@ -29,6 +29,15 @@ start.setSeconds(0, 0);
 const end = new Date(start.getTime() + 3 * 3.6e6);
 
 const newPage = async (browser: Browser) => (await browser.newContext()).newPage();
+/** Turns on two-step verification through the Security page, using the setup key it shows. */
+async function enrollMfa(page: Page) {
+  await page.goto("/app/settings/security");
+  await page.getByRole("button", { name: "Set up two-step verification" }).click();
+  const secret = (await page.getByLabel("Setup key").textContent())!.trim();
+  await page.getByLabel("Enter the 6-digit code it shows").fill(await freshCode(secret));
+  await page.getByRole("button", { name: "Turn on" }).click();
+  await expect(page.getByText("Signing in asks for a code")).toBeVisible();
+}
 const card = (page: Page, text: string) => page.locator("div[data-slot=card]", { hasText: text });
 // A real 1×1 PNG and a minimal PDF: the API checks the bytes, not the name or declared type.
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -90,12 +99,8 @@ test("Creator Hub is set up through the UI", async () => {
   // Finance screens stay locked until two-step verification is on.
   await alexPage.goto("/app/finance");
   await expect(alexPage.locator("[data-slot=alert]").first()).toContainText(/two-step/i);
-  await alexPage.goto("/app/settings/security");
-  await alexPage.getByRole("button", { name: "Set up two-step verification" }).click();
-  const secret = (await alexPage.getByLabel("Setup key").textContent())!.trim();
-  await alexPage.getByLabel("Enter the 6-digit code it shows").fill(await freshCode(secret));
-  await alexPage.getByRole("button", { name: "Turn on" }).click();
-  await expect(alexPage.getByText("Signing in asks for a code")).toBeVisible();
+  await enrollMfa(alexPage);
+  await enrollMfa(rosaPage); // the location manager is a second approver for money, which needs MFA
 });
 
 test("brand signs up and gets verified", async () => {
@@ -470,8 +475,11 @@ test("invoice paid (sandbox); payout run approved and sent; the seller sees the 
   await expect(f.getByText(/Sandbox: no payment provider is connected/)).toBeVisible();
   await f.getByRole("button", { name: "Build a payout run" }).click();
   await expect(f.getByRole("status")).toContainText("Run created for $28.00"); // commission 10% × $280; no bonus; LIVE under a minute
-  await f.getByRole("button", { name: "Approve" }).click();
-  await expect(f.getByRole("status")).toContainText("Approved");
+  await expect(f.getByText("Waiting for someone else to approve")).toBeVisible(); // maker-checker
+  await rosaPage.goto("/app/finance/payouts");
+  await rosaPage.getByRole("button", { name: "Approve" }).click();
+  await expect(rosaPage.getByRole("status")).toContainText("Approved");
+  await f.reload();
   await f.getByRole("button", { name: "Send (sandbox)" }).click();
   await expect(f.getByRole("status")).toContainText("1 paid, 0 failed");
   await f.getByRole("button", { name: "Build a payout run" }).click();

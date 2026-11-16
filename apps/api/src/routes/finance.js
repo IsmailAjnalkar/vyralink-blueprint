@@ -23,6 +23,9 @@ async function finBooking(db, req, id) {
   if (b.ops_org !== m.orgId) throw notFound('Booking not found');
   return b;
 }
+/** Total already credited against an invoice (credit notes are stored as negative amounts). */
+const credited = async (db, invoiceId) => (await db.query(`SELECT COALESCE(-sum(amount_cents), 0)::int AS c FROM invoices WHERE credits_invoice_id = $1 AND kind = 'credit_note'`, [invoiceId])).rows[0].c;
+
 async function finInvoice(db, req, id) {
   const m = member(req, FIN);
   return one(db, `SELECT i.* FROM invoices i WHERE i.id = $1 AND ${OWNS('i.booking_id', '$2')} FOR UPDATE OF i`, [id, m.orgId], 'Invoice not found');
@@ -92,9 +95,9 @@ export default async function finance(app) {
     return tx(pool, async (db) => {
       const i = await finInvoice(db, req, req.params.id);
       if (i.kind === 'credit_note' || ['draft', 'void'].includes(i.status)) throw conflict('Credit notes apply to issued or paid invoices');
-      if (req.body.amountCents > i.amount_cents) throw bad('A credit note can’t exceed the invoice');
-      const { rows: [cn] } = await db.query(`INSERT INTO invoices (number, org_id, campaign_id, booking_id, kind, basis, amount_cents, status, issued_at) VALUES ('CR-' || nextval('invoice_number_seq'), $1, $2, $3, 'credit_note', $4, $5, 'issued', now()) RETURNING *`,
-        [i.org_id, i.campaign_id, i.booking_id, `Credit against ${i.number}: ${req.body.reason}`, -req.body.amountCents]);
+      if (req.body.amountCents > i.amount_cents - (await credited(db, i.id))) throw bad(`Credits can’t exceed the invoice: at most $${((i.amount_cents - (await credited(db, i.id))) / 100).toFixed(2)} is left`, 'credit_exceeds_invoice');
+      const { rows: [cn] } = await db.query(`INSERT INTO invoices (number, org_id, campaign_id, booking_id, kind, basis, amount_cents, status, issued_at, credits_invoice_id) VALUES ('CR-' || nextval('invoice_number_seq'), $1, $2, $3, 'credit_note', $4, $5, 'issued', now(), $6) RETURNING *`,
+        [i.org_id, i.campaign_id, i.booking_id, `Credit against ${i.number}: ${req.body.reason}`, -req.body.amountCents, i.id]);
       await audit(db, req, 'invoice.credit_note', 'invoice', cn.id, { against: i.number, ...req.body });
       reply.code(201);
       return cn;
@@ -129,7 +132,11 @@ export default async function finance(app) {
       if (req.body.amountCents === 0) throw bad('Amount can’t be zero');
       const b = await finBooking(db, req, req.body.bookingId);
       if (!b.seller_id) throw conflict('This booking has no seller');
-      const needsApproval = Math.abs(req.body.amountCents) > (await setting(db, 'adjustment_approval_cents'));
+      // Small adjustments add up: anything that takes this seller's unapproved adjustments over the limit in 24 h needs a second person too.
+      const { rows: [{ recent }] } = await db.query(`SELECT COALESCE(sum(abs(amount_cents)), 0)::int AS recent FROM ledger_entries WHERE seller_id = $1 AND kind = 'adjustment' AND approved_by IS NULL
+        AND created_by IS NOT NULL AND reason NOT LIKE 'dispute%' AND reason NOT LIKE 'refund_after_lock%' AND created_at > now() - interval '24 hours'`, [b.seller_id]);
+      const limit = await setting(db, 'adjustment_approval_cents');
+      const needsApproval = Math.abs(req.body.amountCents) > limit || recent + Math.abs(req.body.amountCents) > limit;
       const { rows: [e] } = await db.query(`INSERT INTO ledger_entries (seller_id, booking_id, kind, basis, amount_cents, status, reason, created_by) VALUES ($1, $2, 'adjustment', $3, $4, $5, $3, $6) RETURNING *`,
         [b.seller_id, b.id, req.body.reason, req.body.amountCents, needsApproval ? 'pending_approval' : 'locked', req.user.id]);
       await audit(db, req, 'ledger.adjustment', 'ledger_entry', e.id, { ...req.body, needsApproval });
@@ -142,6 +149,7 @@ export default async function finance(app) {
 
   app.post('/ledger/adjustments/:id/approve', async (req) => {
     const m = member(req, ['finance_admin', 'location_manager']);
+    requireMfa(req); // approving money needs a second factor, whatever the role
     return tx(pool, async (db) => {
       const e = await one(db, `SELECT e.* FROM ledger_entries e WHERE e.id = $1 AND ${OWNS('e.booking_id', '$2')} FOR UPDATE OF e`, [req.params.id, m.orgId], 'Adjustment not found');
       if (e.status !== 'pending_approval') throw conflict('This adjustment isn’t waiting for approval');
@@ -194,9 +202,12 @@ export default async function finance(app) {
   }
 
   app.post('/payout-runs/:id/approve', async (req) => {
+    const m = member(req, ['finance_admin', 'location_manager']);
+    requireMfa(req);
     return tx(pool, async (db) => {
-      const run = await finRun(db, req, req.params.id);
+      const run = await one(db, 'SELECT * FROM payout_runs WHERE id = $1 AND org_id = $2 FOR UPDATE', [req.params.id, m.orgId], 'Payout run not found');
       if (run.status !== 'draft') throw conflict(`Run is already ${run.status}`);
+      if (run.created_by === req.user.id) throw conflict('Whoever builds a payout run can’t approve it; ask another finance administrator or a location manager', 'same_approver');
       if (run.approvals.includes(req.user.id)) throw conflict('You already approved this run; a different person must give the second approval', 'same_approver');
       const approvals = [...run.approvals, req.user.id];
       const needed = run.total_cents > (await setting(db, 'payout_two_approval_cents')) ? 2 : 1;
@@ -342,9 +353,10 @@ export default async function finance(app) {
       const out = req.body.outcomeCents;
       if (d.invoice_id) {
         const inv = await one(db, 'SELECT * FROM invoices WHERE id = $1 FOR UPDATE', [d.invoice_id]);
-        if (out > inv.amount_cents) throw bad('Credit can’t exceed the invoice');
-        if (out > 0) await db.query(`INSERT INTO invoices (number, org_id, campaign_id, booking_id, kind, basis, amount_cents, status, issued_at) VALUES ('CR-' || nextval('invoice_number_seq'), $1, $2, $3, 'credit_note', $4, $5, 'issued', now())`, [inv.org_id, inv.campaign_id, inv.booking_id, `Dispute outcome on ${inv.number}`, -out]);
-        await db.query('UPDATE invoices SET status = $2 WHERE id = $1', [inv.id, out >= inv.amount_cents ? 'credited' : 'issued']);
+        const left = inv.amount_cents - (await credited(db, inv.id));
+        if (out > left) throw bad(`Credit can’t exceed what is left on the invoice ($${(left / 100).toFixed(2)})`, 'credit_exceeds_invoice');
+        if (out > 0) await db.query(`INSERT INTO invoices (number, org_id, campaign_id, booking_id, kind, basis, amount_cents, status, issued_at, credits_invoice_id) VALUES ('CR-' || nextval('invoice_number_seq'), $1, $2, $3, 'credit_note', $4, $5, 'issued', now(), $6)`, [inv.org_id, inv.campaign_id, inv.booking_id, `Dispute outcome on ${inv.number}`, -out, inv.id]);
+        await db.query('UPDATE invoices SET status = $2 WHERE id = $1', [inv.id, out >= left ? 'credited' : 'issued']);
       } else if (d.opened_by === d.seller_id) {
         if (out > 0) await db.query(`INSERT INTO ledger_entries (seller_id, booking_id, kind, basis, amount_cents, status, reason, created_by) VALUES ($1, $2, 'adjustment', $3, $4, 'locked', $5, $6)`, [d.seller_id, d.booking_id, `Dispute outcome: ${req.body.decision}`, out, `dispute:${d.id}`, admin.id]);
       } else {
@@ -362,14 +374,16 @@ export default async function finance(app) {
     });
   });
 
+  // Location managers can be the second approver, so they can read runs too (building and sending stay with finance).
   app.get('/payout-runs', async (req) => {
-    const m = member(req, FIN);
+    const m = member(req, [...FIN, 'location_manager']);
     return (await pool.query(`SELECT r.*, (SELECT count(*) FROM payouts p WHERE p.run_id = r.id)::int AS payouts,
         (SELECT count(*) FROM payouts p WHERE p.run_id = r.id AND p.status = 'failed')::int AS failed FROM payout_runs r WHERE r.org_id = $1 ORDER BY r.created_at DESC`, [m.orgId])).rows;
   });
 
   app.get('/payout-runs/:id', async (req) => {
-    const run = await finRun(pool, req, req.params.id);
+    const m = member(req, [...FIN, 'location_manager']);
+    const run = await one(pool, 'SELECT * FROM payout_runs WHERE id = $1 AND org_id = $2', [req.params.id, m.orgId], 'Payout run not found');
     const { rows: payouts } = await pool.query('SELECT p.*, sp.display_name AS seller FROM payouts p JOIN seller_profiles sp ON sp.user_id = p.seller_id WHERE p.run_id = $1 ORDER BY sp.display_name', [run.id]);
     return { ...run, payouts };
   });

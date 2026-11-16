@@ -12,13 +12,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api, usd } from "@/lib/api";
 import { useAction, useLoad } from "@/lib/use-load";
 
-type Run = { id: string; status: string; total_cents: number; currency: string; approvals: string[]; created_at: string; executed_at: string | null; payouts: number; failed: number };
+type Run = { id: string; created_by: string; status: string; total_cents: number; currency: string; approvals: string[]; created_at: string; executed_at: string | null; payouts: number; failed: number };
 type Payout = { id: string; seller: string; seller_id: string; amount_cents: number; status: string; failure_reason: string | null; attempts: number };
 type Held = { seller: string; amountCents: number; reason: string };
 
 export default function Payouts() {
-  const { current } = useSession();
+  const { me, current } = useSession();
   const org = current?.org_id ?? "";
+  const isFinance = current?.role === "finance_admin";
   const runs = useLoad(() => api<Run[]>("payout-runs", { org }), org);
   const [open, setOpen] = useState<string | null>(null);
   const [held, setHeld] = useState<Held[]>([]);
@@ -32,7 +33,8 @@ export default function Payouts() {
   return (
     <div className="grid max-w-5xl gap-6">
       <PageHeader title="Payout runs" description="A line is claimed by exactly one run, so nobody is paid twice."
-        actions={<><Button disabled={act.busy} onClick={build}>Build a payout run</Button><ExportLink kind="payouts" org={org} /></>} />
+        actions={isFinance && <><Button disabled={act.busy} onClick={build}>Build a payout run</Button><ExportLink kind="payouts" org={org} /></>} />
+      <p className="text-sm text-muted-foreground">Two people: whoever builds a run can’t approve it. Another finance administrator or a location manager approves, with two-step verification.</p>
       <Alert><AlertDescription>Sandbox: no payment provider is connected, so “Send” simulates the provider and records the result. Real payouts need Stripe Connect.</AlertDescription></Alert>
       <Messages error={act.error ?? runs.error} notice={act.notice} />
       {held.length > 0 && (
@@ -50,11 +52,12 @@ export default function Payouts() {
           </CardHeader>
           <CardContent className="grid gap-3">
             <div className="flex flex-wrap gap-2">
-              {r.status === "draft" && <Button size="sm" disabled={act.busy} onClick={() => act.run(() => api<{ status: string; approvals: number; needed: number }>(`payout-runs/${r.id}/approve`, { org, body: {} }), (x) => (x.status === "approved" ? "Approved." : `Approval ${x.approvals} of ${x.needed}: a different person must approve too.`))}>Approve</Button>}
-              {r.status === "approved" && <Button size="sm" disabled={act.busy} onClick={() => act.run(() => api<{ paid: number; failed: number }>(`payout-runs/${r.id}/execute`, { org, body: {} }), (x) => `Sent (sandbox): ${x.paid} paid, ${x.failed} failed.`)}>Send (sandbox)</Button>}
+              {r.status === "draft" && r.created_by === me.user.id && <span className="text-sm text-muted-foreground">Waiting for someone else to approve</span>}
+              {r.status === "draft" && r.created_by !== me.user.id && <Button size="sm" disabled={act.busy} onClick={() => act.run(() => api<{ status: string; approvals: number; needed: number }>(`payout-runs/${r.id}/approve`, { org, body: {} }), (x) => (x.status === "approved" ? "Approved." : `Approval ${x.approvals} of ${x.needed}: a different person must approve too.`))}>Approve</Button>}
+              {r.status === "approved" && isFinance && <Button size="sm" disabled={act.busy} onClick={() => act.run(() => api<{ paid: number; failed: number }>(`payout-runs/${r.id}/execute`, { org, body: {} }), (x) => `Sent (sandbox): ${x.paid} paid, ${x.failed} failed.`)}>Send (sandbox)</Button>}
               <Button size="sm" variant="ghost" onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}>{open === r.id ? "Hide" : "Show"} payouts</Button>
             </div>
-            {open === r.id && <RunPayouts runId={r.id} org={org} onChange={runs.reload} />}
+            {open === r.id && <RunPayouts runId={r.id} org={org} canRetry={isFinance} onChange={runs.reload} />}
           </CardContent>
         </Card>
       ))}
@@ -62,7 +65,7 @@ export default function Payouts() {
   );
 }
 
-function RunPayouts({ runId, org, onChange }: { runId: string; org: string; onChange: () => unknown }) {
+function RunPayouts({ runId, org, canRetry, onChange }: { runId: string; org: string; canRetry: boolean; onChange: () => unknown }) {
   const run = useLoad(() => api<{ payouts: Payout[] }>(`payout-runs/${runId}`, { org }), runId);
   const act = useAction(() => Promise.all([run.reload(), onChange()]));
   return (
@@ -77,7 +80,7 @@ function RunPayouts({ runId, org, onChange }: { runId: string; org: string; onCh
               <TableCell className="text-right tabular-nums">{usd(p.amount_cents)}</TableCell>
               <TableCell><Status value={p.status} />{p.failure_reason && <span className="block text-xs">{p.failure_reason}</span>}</TableCell>
               <TableCell>{p.attempts}</TableCell>
-              <TableCell>{p.status === "failed" && <Button size="sm" variant="outline" disabled={act.busy} onClick={() => act.run(() => api(`payouts/${p.id}/retry`, { org, body: {} }), "Retried and paid (sandbox).")}>Retry</Button>}</TableCell>
+              <TableCell>{p.status === "failed" && canRetry && <Button size="sm" variant="outline" disabled={act.busy} onClick={() => act.run(() => api(`payouts/${p.id}/retry`, { org, body: {} }), "Retried and paid (sandbox).")}>Retry</Button>}</TableCell>
             </TableRow>
           ))}
         </TableBody>

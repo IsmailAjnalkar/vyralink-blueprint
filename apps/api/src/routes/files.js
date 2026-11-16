@@ -1,7 +1,7 @@
 // File upload and download (product images, verification documents) through the storage provider.
 // The type is decided by the file's first bytes, never by the declared content type or the file name.
 import { createHash, randomUUID } from 'node:crypto';
-import { audit, bad, forbidden, member, notFound, one, platformStaff, user, BRAND } from '../http.js';
+import { audit, bad, conflict, forbidden, member, notFound, one, platformStaff, user, BRAND } from '../http.js';
 import { storage } from '../providers.js';
 
 const SNIFF = [
@@ -15,6 +15,8 @@ const PURPOSES = {
   verification_document: { roles: ['brand_owner'], types: ['image/png', 'image/jpeg', 'application/pdf'], maxBytes: 10 * 2 ** 20 },
 };
 const MAX = 10 * 2 ** 20;
+const ORG_QUOTA_BYTES = 1024 * 2 ** 20; // ponytail: flat 1 GB per organization; make it a plan setting when plans exist
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function files(app) {
   const { pool } = app;
@@ -31,6 +33,8 @@ export default async function files(app) {
       const type = SNIFF.find(([, test]) => test(bytes))?.[0];
       if (!type || !rule.types.includes(type)) throw bad(`Upload a ${rule.types.map((t) => t.split('/')[1].toUpperCase()).join(', ')} file`, 'file_type');
       if (bytes.length > rule.maxBytes) throw bad(`Files can be at most ${rule.maxBytes / 2 ** 20} MB`, 'file_too_large');
+      const { rows: [{ used }] } = await pool.query('SELECT COALESCE(sum(size_bytes), 0)::bigint AS used FROM files WHERE org_id = $1', [m.orgId]);
+      if (Number(used) + bytes.length > ORG_QUOTA_BYTES) throw conflict('Your organization’s file storage is full', 'storage_quota');
       const key = randomUUID();
       await storage().put(key, bytes);
       const { rows: [f] } = await pool.query(
@@ -42,11 +46,13 @@ export default async function files(app) {
     });
   });
 
-  /** Product images: any signed-in user (sellers see what they'll sell). Documents: the organization and platform staff. */
+  /** Product images: any signed-in user (sellers see what they'll sell). Documents: the organization's Brand Owners and platform staff. */
   app.get('/files/:id', async (req, reply) => {
     user(req);
+    if (!UUID.test(req.params.id)) throw notFound('File not found');
     const f = await one(pool, 'SELECT * FROM files WHERE id = $1', [req.params.id], 'File not found');
-    if (f.purpose !== 'product_image' && req.membership?.orgId !== f.org_id) {
+    const owner = req.membership?.orgId === f.org_id && req.membership.role === 'brand_owner';
+    if (f.purpose !== 'product_image' && !owner) {
       try { platformStaff(req); } catch { throw notFound('File not found'); }
     }
     const bytes = await storage().get(f.storage_key);

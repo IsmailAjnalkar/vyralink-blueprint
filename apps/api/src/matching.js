@@ -1,11 +1,12 @@
 // Rules-based seller matching (blueprint B09): a fixed, published scoring with a reason for every point.
 // No machine learning and no personal attributes: only category fit, verified results from completed sessions,
-// reliability, required training, availability and rate. New sellers get a neutral reliability score, never zero.
+// reliability, required training and rate. New sellers get a neutral reliability score, never zero.
 
 export const WEIGHTS = { category: 25, results: 30, reliability: 20, training: 15, rate: 10 };
 
 /**
- * candidates: rows from SELLER_STATS_SQL plus { busy: boolean }.
+ * candidates: rows from SELLER_STATS_SQL. Availability is not used: it would let a brand probe another seller's schedule;
+ * a clash is refused when the booking is made.
  * campaign: { required_category, product_categories[], required_courses[], base_rate_cents }.
  * Returns eligible sellers ranked by score, each with a points breakdown, and the excluded ones with the reason.
  */
@@ -18,7 +19,6 @@ export function rankSellers(candidates, campaign) {
   for (const s of candidates) {
     const cats = (s.categories ?? []).map((c) => c.toLowerCase());
     if (s.paused) { excluded.push({ seller: s, reason: 'Paused' }); continue; }
-    if (s.busy) { excluded.push({ seller: s, reason: 'Already booked at this time' }); continue; }
     if (campaign.required_category && !cats.includes(campaign.required_category.toLowerCase())) {
       excluded.push({ seller: s, reason: `Doesn't list the required category (${campaign.required_category})` });
       continue;

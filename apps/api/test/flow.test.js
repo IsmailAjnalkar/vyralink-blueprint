@@ -181,10 +181,10 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   // A signed booking can't be overwritten by inviting someone else.
   const priya = await signup('priya', 'seller', 'Priya Nair');
   assert.equal((await call('POST', `/campaigns/${camp.id}/invitations`, { ...brand, body: { sellerId: priya.user.id } })).body.code, 'already_booked');
-  // Matching: an overlapping campaign leaves the booked seller out, counted but not named; the own campaign keeps her.
+  // Matching ignores schedules (no oracle on another seller's bookings): an overlapping campaign still lists her.
   const overlapping = await ok('GET', `/campaigns/${other.id}/matches`, brand);
-  assert.ok(!overlapping.ranked.some((r) => r.sellerId === id.sarah));
-  assert.deepEqual(overlapping.excluded, [{ reason: 'Already booked at this time', count: 1 }]);
+  assert.ok(overlapping.ranked.some((r) => r.sellerId === id.sarah));
+  assert.deepEqual(overlapping.excluded, []);
   assert.ok(overlapping.ranked.some((r) => r.name === 'Priya Nair'));
   const own = (await ok('GET', `/campaigns/${camp.id}/matches`, brand)).ranked.find((r) => r.sellerId === id.sarah);
   assert.equal(own.invitation, 'accepted');
@@ -236,12 +236,22 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
     buf = rest.join('\n\n');
     return JSON.parse(event.replace(/^data: /, ''));
   };
+  after(() => stop.abort()); // never leave the stream open if an assertion below fails
   assert.equal((await nextEvent()).sessions[0].orders.source, 'Unavailable');
   await ok('POST', `/bookings/${id.booking}/metrics`, { ...jordan, body: { orders: 64, gmvCents: 256000, asOf: new Date().toISOString() } });
   const pushed = (await nextEvent()).sessions[0];
   assert.deepEqual([pushed.orders.value, pushed.gmvCents.value, pushed.orders.source], [64, 256000, 'Manual']);
   stop.abort();
-  const cc =await ok('GET', `/locations/${id.loc}/control-center`, rosa);
+  // At most three open streams per session: a runaway tab can't exhaust the database.
+  await new Promise((r) => setTimeout(r, 300));
+  const tabs = new AbortController();
+  after(() => tabs.abort());
+  const openTab = () => fetch(`http://127.0.0.1:${app.server.address().port}/v1/locations/${id.loc}/control-center/stream`, { headers: { authorization: `Bearer ${T.rosa}`, 'x-org-id': id.ops }, signal: tabs.signal });
+  const opened = [];
+  for (let i = 0; i < 4; i++) opened.push((await openTab()).status);
+  assert.deepEqual(opened, [200, 200, 200, 429]);
+  tabs.abort();
+  const cc = await ok('GET', `/locations/${id.loc}/control-center`, rosa);
   assert.equal(cc.sessions[0].orders.source, 'Manual');
   assert.equal(cc.sessions[0].viewers.source, 'Unavailable');
 
@@ -303,6 +313,10 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   // ---- refund after lock: adjustment + credit note, never an edit
   const late = await ok('POST', `/bookings/${id.booking}/refunds`, { as: 'alex', org: id.ops, body: { csv: 'order_id,refund_cents\nO5,4000' } });
   assert.deepEqual(late.adjustments, [{ kind: 'commission', deltaCents: -200 }, { kind: 'performance_fee', deltaCents: -280 }]);
+  // After lock only finance imports refunds, and re-importing a smaller refund can't raise pay or bill the brand again.
+  const undoRefund = 'order_id,refund_cents\nO5,0';
+  assert.equal((await call('POST', `/bookings/${id.booking}/refunds`, { ...jordan, body: { csv: undoRefund } })).status, 403);
+  assert.deepEqual((await ok('POST', `/bookings/${id.booking}/refunds`, { as: 'alex', org: id.ops, body: { csv: undoRefund } })).adjustments, []);
 
   // ---- brand report: GMV is sales, cost is fees
   const report = await ok('GET', `/campaigns/${camp.id}/report`, brand);
@@ -330,7 +344,9 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   const run = await ok('POST', '/payout-runs', { as: 'alex', org: id.ops });
   assert.equal(run.payouts[0].amount_cents, 9000 + 29200 + 10000 - 200 - 2000); // held −5000, released +5000, outcome −2000
   assert.equal((await ok('POST', '/payout-runs', { as: 'alex', org: id.ops })).run, null); // nothing left to pay twice
-  await ok('POST', `/payout-runs/${run.run.id}/approve`, { as: 'alex', org: id.ops });
+  // Maker-checker: whoever builds a run can't approve it.
+  assert.equal((await call('POST', `/payout-runs/${run.run.id}/approve`, { as: 'alex', org: id.ops })).body.code, 'same_approver');
+  await ok('POST', `/payout-runs/${run.run.id}/approve`, { as: 'bea', org: id.ops });
   const exec = await ok('POST', `/payout-runs/${run.run.id}/execute`, { as: 'alex', org: id.ops, body: {} });
   assert.deepEqual([exec.paid, exec.failed], [1, 0]);
   assert.equal((await ok('GET', '/seller/earnings', { as: 'sarah' })).paidCents, 46000);
@@ -346,12 +362,18 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   const waiting = await ok('GET', '/ledger?status=locked', rosa); // a location manager sees only what awaits approval
   assert.ok(waiting.length >= 1 && waiting.every((e) => e.status === 'pending_approval'));
   assert.equal((await ok('POST', `/ledger/adjustments/${adj.id}/approve`, { as: 'bea', org: id.ops })).status, 'locked');
+  // Small adjustments can't be stacked past the limit: the one that crosses it within 24 h waits for a second person.
+  assert.equal((await ok('POST', '/ledger/adjustments', { as: 'alex', org: id.ops, body: { bookingId: id.booking, amountCents: 6000, reason: 'Goodwill A' } })).status, 'locked');
+  assert.equal((await ok('POST', '/ledger/adjustments', { as: 'alex', org: id.ops, body: { bookingId: id.booking, amountCents: 6000, reason: 'Goodwill B' } })).status, 'pending_approval');
 
   // ---- big payout runs need two different approvers
   const big = await ok('POST', '/payout-runs', { as: 'alex', org: id.ops });
-  assert.equal((await ok('POST', `/payout-runs/${big.run.id}/approve`, { as: 'alex', org: id.ops })).status, 'draft');
-  assert.equal((await call('POST', `/payout-runs/${big.run.id}/approve`, { as: 'alex', org: id.ops })).body.code, 'same_approver');
-  assert.equal((await ok('POST', `/payout-runs/${big.run.id}/approve`, { as: 'bea', org: id.ops })).status, 'approved');
+  assert.equal((await call('POST', `/payout-runs/${big.run.id}/approve`, { as: 'alex', org: id.ops })).body.code, 'same_approver'); // the builder
+  assert.equal((await ok('POST', `/payout-runs/${big.run.id}/approve`, { as: 'bea', org: id.ops })).status, 'draft');
+  assert.equal((await call('POST', `/payout-runs/${big.run.id}/approve`, { as: 'bea', org: id.ops })).body.code, 'same_approver'); // twice by one person
+  assert.equal((await call('POST', `/payout-runs/${big.run.id}/approve`, rosa)).body.code, 'mfa_enrollment_required'); // approvers need MFA
+  await enableMfa('rosa');
+  assert.equal((await ok('POST', `/payout-runs/${big.run.id}/approve`, rosa)).status, 'approved');
   const failed = await ok('POST', `/payout-runs/${big.run.id}/execute`, { as: 'alex', org: id.ops, body: { failSellerIds: [id.sarah], failureReason: 'Account closed' } });
   assert.equal(failed.failed, 1);
   const payout = (await ok('GET', '/seller/payouts', { as: 'sarah' })).find((p) => p.status === 'failed');
@@ -378,6 +400,12 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   const studioStats = await ok('GET', '/analytics/studio', rosa);
   assert.equal(studioStats.booths.find((b) => b.name === 'Beauty Booth 02').sessions, 1);
   assert.equal((await call('GET', '/analytics/studio', { as: 'jordan', org: id.ops })).status, 403); // producers don't see business analytics
+
+  // ---- credits against one invoice can't add up to more than the invoice
+  const perfInv = (await ok('GET', '/invoices', brand)).find((i) => i.kind === 'performance');
+  await ok('POST', `/invoices/${perfInv.id}/credit-note`, { as: 'alex', org: id.ops, body: { amountCents: perfInv.amount_cents - 100, reason: 'Goodwill' } });
+  assert.equal((await call('POST', `/invoices/${perfInv.id}/credit-note`, { as: 'alex', org: id.ops, body: { amountCents: 101, reason: 'Again' } })).body.code, 'credit_exceeds_invoice');
+  await ok('POST', `/invoices/${perfInv.id}/credit-note`, { as: 'alex', org: id.ops, body: { amountCents: 100, reason: 'Rest' } });
 
   // ---- audit trail and cancellation quote
   assert.ok((await ok('GET', '/admin/audit?action=results.', { as: 'taylor' })).length >= 2);
@@ -406,6 +434,8 @@ test('suspended organizations are read-only', async () => {
   const fetchFile = (fileId, who) => app.inject({ method: 'GET', url: `/v1/files/${fileId}`, headers: { authorization: `Bearer ${T[who.as]}`, ...(who.org ? { 'x-org-id': who.org } : {}) } });
   assert.equal((await fetchFile(id.doc, asShady)).statusCode, 404); // another brand's document
   assert.equal((await fetchFile(id.doc, { as: 'sarah' })).statusCode, 404); // a seller
+  assert.equal((await fetchFile(id.doc, { as: 'leo', org: id.brand })).statusCode, 404); // same brand, but not a Brand Owner
+  assert.equal((await fetchFile('not-a-uuid', { as: 'taylor' })).statusCode, 404);
   const asAdmin = await fetchFile(id.doc, { as: 'taylor' });
   assert.deepEqual([asAdmin.statusCode, asAdmin.headers['content-type'], asAdmin.headers['content-disposition'].startsWith('attachment')], [200, 'application/pdf', true]);
   const image = await fetchFile(id.img, { as: 'sarah' }); // sellers see product images

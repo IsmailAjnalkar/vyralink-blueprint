@@ -8,7 +8,7 @@ function navFor(me: Me, current: Membership | null, unread: number): NavItem[] {
     : [];
   const finance: NavItem[] = current?.role === "finance_admin"
     ? [{ href: "/app/finance", label: "Finance" }, { href: "/app/finance/invoices", label: "Invoices" }, { href: "/app/finance/ledger", label: "Seller ledger" }, { href: "/app/finance/payouts", label: "Payout runs" }, { href: "/app/finance/disputes", label: "Disputes" }]
-    : current?.role === "location_manager" ? [{ href: "/app/finance/ledger", label: "Approvals" }] : [];
+    : current?.role === "location_manager" ? [{ href: "/app/finance/ledger", label: "Approvals" }, { href: "/app/finance/payouts", label: "Payout approvals" }] : [];
   const studioStats: NavItem[] = current?.kind === "operator" && ["location_manager", "finance_admin"].includes(current.role) ? [{ href: "/app/studio/analytics", label: "Studio analytics" }] : [];
   const studio: NavItem[] = current?.kind === "operator" && current.role !== "finance_admin"
     ? [{ href: "/app/studio", label: "Today" }, { href: "/app/studio/live", label: "LIVE control center" }, { href: "/app/studio/bookings", label: "Bookings" }, { href: "/app/studio/locations", label: "Locations" }]

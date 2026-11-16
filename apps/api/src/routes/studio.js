@@ -112,7 +112,8 @@ export default async function studio(app) {
     if (!req.user) throw forbidden();
     const from = req.query.from ?? new Date().toISOString();
     const to = req.query.to ?? new Date(Date.now() + 7 * 864e5).toISOString();
-    const isOps = req.membership?.kind === 'operator';
+    const { rows: [own] } = await pool.query('SELECT org_id FROM locations WHERE id = $1', [req.params.id]);
+    const isOps = req.membership?.kind === 'operator' && own?.org_id === req.membership.orgId;
     const { rows } = await pool.query(
       `SELECT bo.id AS booth_id, bo.name AS booth, bo.status AS booth_status,
          COALESCE(json_agg(json_build_object('from', lower(b.slot), 'to', upper(b.slot), 'status', b.status${isOps ? ", 'bookingId', b.id, 'campaign', c.name" : ''}) ORDER BY lower(b.slot)) FILTER (WHERE b.id IS NOT NULL), '[]') AS busy
@@ -491,14 +492,18 @@ export default async function studio(app) {
   /** Refunds report (CSV): order_id, refund_cents. Before lock it updates provisional figures; after lock it creates adjustments and credit notes. */
   app.post('/bookings/:id/refunds', { schema: body({ csv: 'text' }) }, async (req) => {
     return tx(pool, async (db) => {
-      const { b } = await opsBooking(db, req, req.params.id, ['producer', 'location_manager', 'finance_admin']);
+      const { m, b } = await opsBooking(db, req, req.params.id, ['producer', 'location_manager', 'finance_admin']);
       if (b.results_status === 'pending') throw conflict('Import the order report first');
+      const locked = b.results_status === 'locked';
+      // Locked results move money: only finance (MFA) imports refunds then, and a refund can only grow.
+      if (locked && m.role !== 'finance_admin') throw forbidden('After results are locked, only finance can import refunds');
       const rows = parseCsv(req.body.csv, ['order_id', 'refund_cents']);
       for (const [n, r] of rows.entries()) {
         const refund = Number(r.refund_cents);
         if (!Number.isInteger(refund) || refund < 0) throw bad(`Row ${n + 1}: refund_cents must be a whole number of cents`, 'import_error');
         await one(db, 'SELECT 1 FROM session_orders WHERE booking_id = $1 AND order_id = $2 FOR UPDATE', [b.id, r.order_id], `Row ${n + 1}: order ${r.order_id} is not in this session’s report`);
-        await db.query(`UPDATE session_orders SET refund_cents = LEAST($3, amount_cents), status = CASE WHEN $3 >= amount_cents THEN 'refunded' ELSE status END WHERE booking_id = $1 AND order_id = $2`, [b.id, r.order_id, refund]);
+        await db.query(`UPDATE session_orders SET refund_cents = CASE WHEN $4 THEN GREATEST(refund_cents, LEAST($3, amount_cents)) ELSE LEAST($3, amount_cents) END,
+          status = CASE WHEN GREATEST($3, CASE WHEN $4 THEN refund_cents ELSE 0 END) >= amount_cents THEN 'refunded' ELSE status END WHERE booking_id = $1 AND order_id = $2`, [b.id, r.order_id, refund, locked]);
       }
       const after = b.results_status === 'locked' ? await adjustAfterLock(db, b.id, req.user.id) : (await recomputeProvisional(db, b.id), []);
       await audit(db, req, 'refunds.imported', 'booking', b.id, { rows: rows.length, afterLock: after });
@@ -558,37 +563,74 @@ export default async function studio(app) {
    * Server-sent events: the same payload, pushed whenever the location changes (Postgres NOTIFY), and every 30 s for
    * time-based figures. Session, lock and role are re-checked on each tick, so a revoked session or removed member stops receiving.
    */
+  // Open streams, per session and per process: each stream is cheap, but not free.
+  const STREAMS_PER_SESSION = 3;
+  const STREAMS_PER_PROCESS = 500;
+  const streams = new Map(); // session id -> open count
+  let openStreams = 0;
+  // One board computation per location per burst of changes, shared by every subscriber of that location.
+  const boards = new Map();
+  const sharedBoard = (l) => {
+    if (!boards.has(l.id)) boards.set(l.id, controlCenter(l).finally(() => setTimeout(() => boards.delete(l.id), 250)));
+    return boards.get(l.id);
+  };
+
+  /**
+   * Server-sent events: the same payload, pushed whenever the location changes (Postgres NOTIFY), and every 30 s for
+   * time-based figures. Before every push the session, account lock and floor role are re-checked (cached 5 s), so a
+   * revoked session or removed member stops receiving within seconds.
+   */
   app.get('/locations/:id/control-center/stream', async (req, reply) => {
     const l = await opsLocation(pool, req, req.params.id, ['location_manager', 'producer']);
+    const sessionId = req.session.id;
+    if ((streams.get(sessionId) ?? 0) >= STREAMS_PER_SESSION) throw new HttpError(429, 'Too many open control-center tabs; close one and try again', 'too_many_streams');
+    if (openStreams >= STREAMS_PER_PROCESS) throw new HttpError(503, 'The live board is busy; try again shortly', 'stream_capacity');
+    streams.set(sessionId, (streams.get(sessionId) ?? 0) + 1);
+    openStreams += 1;
+
     reply.hijack();
     const res = reply.raw;
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     let closed = false;
     let timer = null;
+    let tick = null;
+    let unsubscribe = () => {};
+    let checkedAt = 0;
+
+    const allowed = async () => {
+      if (Date.now() - checkedAt < 5000) return true;
+      const { rows } = await pool.query(`SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id JOIN memberships m ON m.user_id = u.id AND m.org_id = $2
+        WHERE s.id = $1 AND s.expires_at > now() AND NOT u.locked AND m.role IN ('location_manager', 'producer')`, [sessionId, l.org_id]).catch(() => ({ rows: [] }));
+      if (rows.length) checkedAt = Date.now();
+      return rows.length > 0;
+    };
     const push = async () => {
       if (closed) return;
-      try { res.write(`data: ${JSON.stringify(await controlCenter(l))}
-
-`); } catch { stop(); }
+      try {
+        if (!(await allowed())) return stop();
+        res.write('data: ' + JSON.stringify(await sharedBoard(l)) + '\n\n');
+      } catch { stop(); }
     };
-    // Bursts of changes (one metric write touches several rows) become one push.
-    const soon = () => { clearTimeout(timer); timer = setTimeout(push, 200); };
-    const unsubscribe = await app.live.subscribe(l.id, soon);
-    const tick = setInterval(async () => {
-      const { rows } = await pool.query(`SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id JOIN memberships m ON m.user_id = u.id AND m.org_id = $2
-        WHERE s.id = $1 AND s.expires_at > now() AND NOT u.locked AND m.role IN ('location_manager', 'producer')`, [req.session.id, l.org_id]).catch(() => ({ rows: [] }));
-      if (!rows.length) return stop();
-      push();
-    }, 30000);
     function stop() {
       if (closed) return;
       closed = true;
       clearInterval(tick);
       clearTimeout(timer);
       unsubscribe();
+      const left = (streams.get(sessionId) ?? 1) - 1;
+      if (left > 0) streams.set(sessionId, left); else streams.delete(sessionId);
+      openStreams -= 1;
       res.end();
     }
     req.raw.on('close', stop);
+    try {
+      // Bursts of changes (one metric write touches several rows) become one push.
+      // A change invalidates the shared board, so the push after it always reflects the new state.
+      unsubscribe = await app.live.subscribe(l.id, () => { boards.delete(l.id); clearTimeout(timer); timer = setTimeout(push, 200); });
+    } catch {
+      return stop(); // no live connection: end the stream; the browser reconnects
+    }
+    tick = setInterval(push, 30000);
     await push();
   });
 

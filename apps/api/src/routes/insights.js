@@ -4,22 +4,19 @@ import { rankSellers } from '../matching.js';
 import { loadSettlement } from '../settle.js';
 import { SELLER_STATS_SQL } from './identity.js';
 
-const ACTIVE = `('hold', 'confirmed', 'checked_in', 'in_progress')`;
-
 export default async function insights(app) {
   const { pool } = app;
 
   /**
-   * Ranked sellers for a campaign with the reason behind every point. Sellers left out are only counted by reason:
-   * a brand never learns another seller's schedule.
+   * Ranked sellers for a campaign with the reason behind every point. Sellers left out are only counted by reason.
+   * Availability isn't part of matching (it would reveal schedules); a clash is refused when the booking is made.
    */
   app.get('/campaigns/:id/matches', async (req) => {
     const m = member(req, BRAND);
     const c = await one(pool, `SELECT c.*, ARRAY(SELECT DISTINCT p.category FROM products p WHERE p.id = ANY(c.product_ids)) AS product_categories
       FROM campaigns c WHERE c.id = $1 AND c.org_id = $2`, [req.params.id, m.orgId], 'Campaign not found');
     const { rows } = await pool.query(
-      `SELECT s.*, EXISTS (SELECT 1 FROM bookings b WHERE b.seller_id = s.user_id AND b.campaign_id <> $3 AND b.status IN ${ACTIVE} AND b.slot && tstzrange($1, $2)) AS busy
-       FROM (${SELLER_STATS_SQL}) s WHERE NOT s.paused LIMIT 500`, [c.starts_at, c.ends_at, c.id]);
+      `SELECT s.* FROM (${SELLER_STATS_SQL}) s WHERE NOT s.paused LIMIT 500`);
     const { rows: inv } = await pool.query('SELECT seller_id, status FROM invitations WHERE campaign_id = $1', [c.id]);
     const invited = new Map(inv.map((i) => [i.seller_id, i.status]));
     const { weights, ranked, excluded } = rankSellers(rows, c);
