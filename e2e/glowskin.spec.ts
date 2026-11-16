@@ -29,6 +29,9 @@ const end = new Date(start.getTime() + 3 * 3.6e6);
 
 const newPage = async (browser: Browser) => (await browser.newContext()).newPage();
 const card = (page: Page, text: string) => page.locator("div[data-slot=card]", { hasText: text });
+// A real 1×1 PNG and a minimal PDF: the API checks the bytes, not the name or declared type.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+const PDF = Buffer.from("%PDF-1.7\n% GlowSkin registration (test document)\n%%EOF\n");
 
 test.beforeAll(async ({ browser }) => {
   const { token } = await call<{ token: string }>("POST", "/auth/login", { body: { email: ADMIN.email, password: ADMIN.password } });
@@ -101,13 +104,20 @@ test("brand signs up and gets verified", async () => {
   await page.getByRole("link", { name: "Verification" }).click();
   await page.getByLabel("Legal company name").fill("GlowSkin Beauty LLC");
   await page.getByLabel("Registration number").fill("VA-2024-118842");
-  await page.getByLabel("Business registration").fill("glowskin-registration.pdf");
+  await page.getByLabel("Business registration").setInputFiles({ name: "glowskin-registration.pdf", mimeType: "application/pdf", buffer: PDF });
   await page.getByRole("button", { name: "Submit for verification" }).click();
   await expect(page.getByRole("status")).toContainText("Submitted");
 
   await adminPage.goto("/app/admin");
   const c = card(adminPage, "GlowSkin Beauty");
   await expect(c).toContainText("VA-2024-118842");
+  const doc = c.getByRole("link", { name: "glowskin-registration.pdf" });
+  const res = await adminPage.request.get((await doc.getAttribute("href"))!);
+  expect([res.status(), res.headers()["content-type"]]).toEqual([200, "application/pdf"]);
+  await brandPage.goto("/app/verification");
+  const ownLink = brandPage.getByRole("link", { name: "glowskin-registration.pdf" });
+  expect((await brandPage.request.get((await ownLink.getAttribute("href"))!)).status()).toBe(200); // own organization
+  expect((await sellerPage.request.get((await doc.getAttribute("href"))!)).status()).toBe(401); // not signed in yet
   await c.getByRole("button", { name: "Approve" }).click();
   await expect(adminPage.getByRole("status")).toContainText("GlowSkin Beauty is verified");
 });
@@ -124,6 +134,10 @@ test("brand adds a product and the admin approves it", async () => {
   await page.getByLabel("Samples").fill("4");
   await page.getByLabel(/Approved selling points/).fill("Contains 15% vitamin C\nBrightens in 4 weeks");
   await page.getByLabel(/must not make/).fill("Cures acne");
+  await page.getByLabel("Product image").setInputFiles({ name: "serum.txt", mimeType: "image/png", buffer: Buffer.from("not an image") });
+  await expect(page.locator("[data-slot=alert]")).toContainText("Upload a PNG, JPEG, WEBP file");
+  await page.getByLabel("Product image").setInputFiles({ name: "serum.png", mimeType: "image/png", buffer: PNG });
+  await expect(page.getByRole("img", { name: "Product image" })).toBeVisible();
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByRole("status")).toContainText("saved as a draft");
   await page.getByRole("link", { name: "Vitamin C Face Serum" }).click();
@@ -132,6 +146,7 @@ test("brand adds a product and the admin approves it", async () => {
 
   await adminPage.goto("/app/admin");
   await adminPage.getByRole("tab", { name: /Products/ }).click();
+  await expect(card(adminPage, "Vitamin C Face Serum").getByRole("img", { name: "Vitamin C Face Serum product image" })).toBeVisible();
   await card(adminPage, "Vitamin C Face Serum").getByRole("button", { name: "Approve" }).click();
   await expect(adminPage.getByRole("status")).toContainText("approved");
 });
@@ -485,4 +500,13 @@ test("large adjustments need a second person; accounting exports download as CSV
   const text = readFileSync(await download.path(), "utf8");
   expect(text).toContain("Goodwill for the early end");
   expect(text).toContain("150.00,USD,locked");
+});
+
+// ---------------------------------------------------------------- Phase 6: integrations
+test("the admin sees which integrations are real, sandbox or blocked", async () => {
+  await adminPage.goto("/app/admin");
+  await adminPage.getByRole("tab", { name: "Integrations" }).click();
+  for (const [name, provider, status] of [["payments", "sandbox", "sandbox"], ["email", "dev", "dev"], ["storage", "local", "dev"], ["orders", "csv", "manual"]]) {
+    await expect(adminPage.getByRole("row", { name: new RegExp(`^${name} ${provider}`) })).toContainText(status);
+  }
 });

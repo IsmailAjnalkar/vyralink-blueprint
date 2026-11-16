@@ -23,7 +23,7 @@ export default defineConfig({
       cwd: "..",
       url: `${API}/v1/health`,
       reuseExistingServer: false,
-      env: { DATABASE_URL: DB, PORT: "4120", TRUST_PROXY_HOPS: "1", RATE_LIMIT_SCALE: "50", ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, DEV_MAIL_DIR: "e2e/.mail" },
+      env: { DATABASE_URL: DB, PORT: "4120", TRUST_PROXY_HOPS: "1", RATE_LIMIT_SCALE: "50", ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, DEV_MAIL_DIR: "e2e/.mail", STORAGE_DIR: "e2e/.storage" },
     },
     {
       command: "npx next start -p 3120",

@@ -1,15 +1,14 @@
 "use client";
-// Brand company verification (blueprint B03). Document upload needs object storage, which isn't configured yet:
-// the brand lists the documents it will provide and the reviewer requests them. Clearly labelled below.
+// Brand company verification (blueprint B03): company details plus documents, uploaded through the storage provider.
 import { TextField } from "@/components/form";
 import { Messages, PageHeader, Status, textareaClass, when } from "@/components/bits";
 import { useSession } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { api } from "@/lib/api";
+import { api, ApiError, uploadFile } from "@/lib/api";
 import { useAction, useLoad } from "@/lib/use-load";
 
-type Verification = { id: string; version: number; status: string; note: string | null; details: Record<string, string>; documents: { type: string; fileName: string }[]; created_at: string };
+type Verification = { id: string; version: number; status: string; note: string | null; details: Record<string, string>; documents: { type: string; fileName: string; fileId?: string }[]; created_at: string };
 const DOCS = [
   { type: "registration", label: "Business registration" },
   { type: "tax_id", label: "Tax ID letter" },
@@ -27,8 +26,12 @@ export default function VerificationPage() {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const details = Object.fromEntries(["legalName", "registrationNumber", "country", "website", "contactPhone", "notes"].map((k) => [k, String(f.get(k) ?? "")]));
-    const documents = DOCS.filter((d) => f.get(`doc-${d.type}`)).map((d) => ({ type: d.type, fileName: String(f.get(`doc-${d.type}`)) }));
-    await act.run(() => api("orgs/current/verification", { org, body: { details, documents } }), "Submitted. A Vyralink reviewer will check it, usually within 2 business days.");
+    const picked = DOCS.map((d) => [d.type, f.get(`doc-${d.type}`)] as const).filter((x): x is readonly [string, File] => x[1] instanceof File && x[1].size > 0);
+    await act.run(async () => {
+      if (!picked.length) throw new ApiError(400, "Attach at least one document.");
+      const documents = await Promise.all(picked.map(async ([type, file]) => ({ type, fileName: file.name, fileId: (await uploadFile("verification_document", file, org)).id })));
+      return api("orgs/current/verification", { org, body: { details, documents } });
+    }, "Submitted. A Vyralink reviewer will check it, usually within 2 business days.");
   }
 
   if (current?.kind !== "brand") return <PageHeader title="Company verification" description="Only brand organizations are verified here." />;
@@ -54,10 +57,13 @@ export default function VerificationPage() {
               </div>
               <fieldset className="grid gap-3 rounded-md border p-4">
                 <legend className="px-1 text-sm font-medium">Documents</legend>
-                <p className="text-xs text-muted-foreground">
-                  File upload isn’t available in this environment yet (no storage bucket is configured). Enter the file name of each document you will provide; the reviewer will ask for the files.
-                </p>
-                {DOCS.map((d) => <TextField key={d.type} id={`doc-${d.type}`} name={`doc-${d.type}`} label={d.label} placeholder="e.g. registration.pdf" />)}
+                <p className="text-xs text-muted-foreground">PDF, PNG or JPEG, up to 10 MB each. Only your organization and Vyralink reviewers can open them.</p>
+                {DOCS.map((d) => (
+                  <div key={d.type} className="grid gap-1.5">
+                    <label htmlFor={`doc-${d.type}`} className="text-sm font-medium">{d.label}</label>
+                    <input id={`doc-${d.type}`} name={`doc-${d.type}`} type="file" accept="application/pdf,image/png,image/jpeg" className="text-sm" />
+                  </div>
+                ))}
               </fieldset>
               <div className="grid gap-1.5">
                 <label htmlFor="notes" className="text-sm font-medium">Anything the reviewer should know</label>
@@ -76,7 +82,7 @@ export default function VerificationPage() {
           <Card key={v.id}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">Version {v.version} <Status value={v.status} /></CardTitle>
-              <CardDescription>{when(v.created_at)} · {v.details.legalName} · {v.documents.length} document(s)</CardDescription>
+              <CardDescription>{when(v.created_at)} · {v.details.legalName} · {v.documents.map((d, i) => <span key={i}>{i ? ", " : ""}{d.fileId ? <a className="underline" href={`/api/files/${d.fileId}?org=${org}`}>{d.fileName}</a> : d.fileName}</span>)}</CardDescription>
             </CardHeader>
             {v.note && <CardContent className="text-sm"><strong>Reviewer note:</strong> {v.note}</CardContent>}
           </Card>

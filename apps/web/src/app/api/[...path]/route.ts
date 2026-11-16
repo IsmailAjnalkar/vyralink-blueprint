@@ -46,7 +46,7 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   if (org) headers.set("x-org-id", org);
   headers.set("x-forwarded-for", clientIp(req));
 
-  const body = ["GET", "HEAD"].includes(req.method) ? undefined : await req.text();
+  const body = ["GET", "HEAD"].includes(req.method) ? undefined : await req.arrayBuffer(); // bytes, so file uploads survive
   const upstream = await fetch(`${API_URL}/v1/${route}${req.nextUrl.search}`, { method: req.method, headers, body, cache: "no-store", signal: req.signal });
 
   const outHeaders = new Headers();

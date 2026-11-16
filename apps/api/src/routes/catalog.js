@@ -3,6 +3,7 @@
 import { setting, tx } from '../db.js';
 import { audit, bad, body, conflict, forbidden, member, notify, notFound, one, orgUsers, platformStaff, superAdmin, user, BRAND, OWNER } from '../http.js';
 import { cancellationFee } from '../money.js';
+import { ownFile } from './files.js';
 import { assertMove } from '../status.js';
 
 export const ARRIVAL_LEAD_MIN = 45; // ponytail: fixed 45 min before start (blueprint: arrive 6:15 for 7:00); make per-campaign if brands ask.
@@ -50,13 +51,14 @@ export default async function catalog(app) {
   const { pool } = app;
 
   // ---------------------------------------------------------------- products
-  app.post('/products', { schema: body({ name: 'string', sku: 'string', priceCents: { type: 'integer', minimum: 1 }, category: 'string', inventory: 'integer?', samplesAvailable: 'integer?', commissionBps: 'integer?', description: 'text?', sellingPoints: 'strings?', restrictedClaims: 'strings?' }) }, async (req, reply) => {
+  app.post('/products', { schema: body({ name: 'string', sku: 'string', priceCents: { type: 'integer', minimum: 1 }, category: 'string', inventory: 'integer?', samplesAvailable: 'integer?', commissionBps: 'integer?', description: 'text?', sellingPoints: 'strings?', restrictedClaims: 'strings?', imageFileId: 'uuid?' }) }, async (req, reply) => {
     const m = member(req, BRAND);
     const b = req.body;
+    const image = b.imageFileId ? await ownFile(pool, m.orgId, b.imageFileId, 'product_image') : null;
     const { rows: [p] } = await pool.query(
-      `INSERT INTO products (org_id, name, sku, price_cents, category, inventory, samples_available, commission_bps, description, selling_points, restricted_claims)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 0), COALESCE($7, 0), COALESCE($8, (SELECT (value)::int FROM settings WHERE key = 'default_commission_bps')), COALESCE($9, ''), COALESCE($10::text[], '{}'), COALESCE($11::text[], '{}')) RETURNING *`,
-      [m.orgId, b.name, b.sku, b.priceCents, b.category, b.inventory ?? null, b.samplesAvailable ?? null, b.commissionBps ?? null, b.description ?? null, b.sellingPoints ?? null, b.restrictedClaims ?? null]);
+      `INSERT INTO products (org_id, name, sku, price_cents, category, inventory, samples_available, commission_bps, description, selling_points, restricted_claims, image_file_id)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 0), COALESCE($7, 0), COALESCE($8, (SELECT (value)::int FROM settings WHERE key = 'default_commission_bps')), COALESCE($9, ''), COALESCE($10::text[], '{}'), COALESCE($11::text[], '{}'), $12) RETURNING *`,
+      [m.orgId, b.name, b.sku, b.priceCents, b.category, b.inventory ?? null, b.samplesAvailable ?? null, b.commissionBps ?? null, b.description ?? null, b.sellingPoints ?? null, b.restrictedClaims ?? null, image]);
     await audit(pool, req, 'product.created', 'product', p.id);
     reply.code(201);
     return p;
@@ -72,10 +74,11 @@ export default async function catalog(app) {
     return one(pool, 'SELECT * FROM products WHERE id = $1 AND org_id = $2', [req.params.id, m.orgId], 'Product not found');
   });
 
-  app.patch('/products/:id', { schema: body({ name: 'string?', priceCents: 'integer?', inventory: 'integer?', samplesAvailable: 'integer?', commissionBps: 'integer?', description: 'text?', sellingPoints: 'strings?', restrictedClaims: 'strings?' }) }, async (req) => {
+  app.patch('/products/:id', { schema: body({ name: 'string?', priceCents: 'integer?', inventory: 'integer?', samplesAvailable: 'integer?', commissionBps: 'integer?', description: 'text?', sellingPoints: 'strings?', restrictedClaims: 'strings?', imageFileId: 'uuid?' }) }, async (req) => {
     const m = member(req, BRAND);
     const b = req.body;
     return tx(pool, async (db) => {
+      if (b.imageFileId) await db.query('UPDATE products SET image_file_id = $3 WHERE id = $1 AND org_id = $2', [req.params.id, m.orgId, await ownFile(db, m.orgId, b.imageFileId, 'product_image')]);
       const p = await one(db, 'SELECT * FROM products WHERE id = $1 AND org_id = $2 FOR UPDATE', [req.params.id, m.orgId], 'Product not found');
       // Changing what sellers may say (or the name they say it about) sends an approved product back to review.
       const changed = (k, col) => b[k] !== undefined && JSON.stringify(b[k]) !== JSON.stringify(p[col]);

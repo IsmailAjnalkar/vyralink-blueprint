@@ -8,6 +8,7 @@ import identity from './routes/identity.js';
 import catalog from './routes/catalog.js';
 import studio from './routes/studio.js';
 import finance from './routes/finance.js';
+import files from './routes/files.js';
 
 export const API_PREFIX = '/v1';
 
@@ -94,6 +95,7 @@ export function buildApp({ pool, logger = false, rateLimitScale = Number(process
     v1.register(catalog);
     v1.register(studio);
     v1.register(finance);
+    v1.register(files);
   }, { prefix: API_PREFIX });
   return app;
 }

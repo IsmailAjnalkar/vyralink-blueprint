@@ -1,8 +1,9 @@
 // Studio operations: locations, booths, bookings, producers, equipment, shipments, samples, check-in, readiness,
 // LIVE session, metrics, incidents, closeout, results import, control center (blueprint O01–O24, C13–C19, BF08–BF15).
 import { setting, tx } from '../db.js';
-import { audit, bad, body, conflict, forbidden, member, notify, notFound, one, orgUsers, user, BRAND } from '../http.js';
+import { audit, bad, body, conflict, forbidden, member, notify, notFound, one, orgUsers, user, BRAND, HttpError } from '../http.js';
 import { adjustAfterLock, loadSettlement, recomputeProvisional } from '../settle.js';
+import { provider, sandboxOrders } from '../providers.js';
 import { assertMove } from '../status.js';
 import { ARRIVAL_LEAD_MIN } from './catalog.js';
 
@@ -449,22 +450,41 @@ export default async function studio(app) {
       const { b } = await opsBooking(db, req, req.params.id, ['producer', 'location_manager', 'finance_admin']);
       if (b.status !== 'completed') throw conflict('Close out the session before importing results');
       if (b.results_status === 'locked') throw conflict('Results are locked; import refunds instead');
-      const rows = parseCsv(req.body.csv, ['order_id', 'placed_at', 'amount_cents', 'status', 'attributed?']);
+      return importOrders(db, req, b, parseCsv(req.body.csv, ['order_id', 'placed_at', 'amount_cents', 'status', 'attributed?']), 'csv');
+    });
+  });
+
+  /** Shared by the CSV import and provider sync: validates every row, upserts, recomputes provisional pay. */
+  async function importOrders(db, req, b, rows, source) {
       for (const [n, r] of rows.entries()) {
         const amount = Number(r.amount_cents);
         if (!Number.isInteger(amount) || amount < 0) throw bad(`Row ${n + 1}: amount_cents must be a whole number of cents`, 'import_error');
         if (!['completed', 'cancelled', 'refunded'].includes(r.status)) throw bad(`Row ${n + 1}: status must be completed, cancelled or refunded`, 'import_error');
         if (Number.isNaN(Date.parse(r.placed_at))) throw bad(`Row ${n + 1}: placed_at is not a date`, 'import_error');
         const attributed = r.attributed === undefined ? true : !['false', '0', 'no'].includes(r.attributed.toLowerCase());
-        await db.query(`INSERT INTO session_orders (booking_id, order_id, placed_at, amount_cents, status, attributed, excluded_reason) VALUES ($1, $2, $3, $4, $5, $6, $7)
-          ON CONFLICT (booking_id, order_id) DO UPDATE SET placed_at = EXCLUDED.placed_at, amount_cents = EXCLUDED.amount_cents, status = EXCLUDED.status, attributed = EXCLUDED.attributed, excluded_reason = EXCLUDED.excluded_reason`,
-          [b.id, r.order_id, r.placed_at, amount, r.status, attributed, attributed ? null : 'Not attributed to the LIVE in the TikTok Shop report']);
+        await db.query(`INSERT INTO session_orders (booking_id, order_id, placed_at, amount_cents, status, attributed, excluded_reason, source) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          ON CONFLICT (booking_id, order_id) DO UPDATE SET placed_at = EXCLUDED.placed_at, amount_cents = EXCLUDED.amount_cents, status = EXCLUDED.status, attributed = EXCLUDED.attributed, excluded_reason = EXCLUDED.excluded_reason, source = EXCLUDED.source`,
+          [b.id, r.order_id, r.placed_at, amount, r.status, attributed, attributed ? null : 'Not attributed to the LIVE in the TikTok Shop report', source]);
       }
       await db.query(`UPDATE bookings SET results_status = 'imported' WHERE id = $1`, [b.id]);
       const s = await recomputeProvisional(db, b.id);
-      await audit(db, req, 'results.imported', 'booking', b.id, { rows: rows.length });
-      await notify(db, [...(await orgUsers(db, b.brand_org, BRAND)), b.seller_id], 'results', `Results imported for ${b.campaign}`);
-      return { imported: rows.length, settlement: s };
+      await audit(db, req, 'results.imported', 'booking', b.id, { rows: rows.length, source });
+      await notify(db, [...(await orgUsers(db, b.brand_org, BRAND)), b.seller_id], 'results', `Results ${source === 'sandbox' ? '(sandbox demo data) ' : ''}imported for ${b.campaign}`);
+      return { imported: rows.length, source, settlement: s };
+  }
+
+  /** Pulls the order report from the configured orders provider (sandbox in development; TikTok Shop once approved). */
+  app.post('/bookings/:id/results/sync', async (req) => {
+    return tx(pool, async (db) => {
+      const { b } = await opsBooking(db, req, req.params.id, ['producer', 'location_manager', 'finance_admin']);
+      const p = provider('orders');
+      if (p === 'csv') throw conflict('No orders integration is enabled; import the TikTok Shop CSV instead', 'provider_not_enabled');
+      if (p === 'tiktok_shop') throw new HttpError(503, 'TikTok Shop partner access isn’t approved yet; import the CSV instead', 'not_configured');
+      if (process.env.NODE_ENV === 'production') throw conflict('Sandbox orders are for development and test only', 'sandbox_in_production');
+      if (b.status !== 'completed') throw conflict('Close out the session before importing results');
+      if (b.results_status === 'locked') throw conflict('Results are locked; import refunds instead');
+      const { rows: prices } = await db.query('SELECT p.price_cents FROM campaigns c JOIN products p ON p.id = ANY(c.product_ids) WHERE c.id = $1', [b.campaign_id]);
+      return importOrders(db, req, b, sandboxOrders(b.id, b.actual_start ?? b.starts_at, prices.map((r) => r.price_cents)), 'sandbox');
     });
   });
 
@@ -490,6 +510,7 @@ export default async function studio(app) {
   app.get('/bookings/:id/settlement', async (req) => {
     const b = await anyBooking(pool, req, req.params.id);
     const { terms, liveMinutes, s } = await loadSettlement(pool, b.id);
+    const { rows: [{ sandbox }] } = await pool.query(`SELECT COALESCE(bool_or(source = 'sandbox'), false) AS sandbox FROM session_orders WHERE booking_id = $1`, [b.id]);
     // Sellers see their own terms and pay, never the brand's fees.
     const isSeller = b.seller_id === req.user.id && req.membership?.orgId !== b.brand_org && req.membership?.orgId !== b.ops_org;
     const { performanceFeeCents, productionFeeCents, ...pay } = s;
@@ -499,7 +520,7 @@ export default async function studio(app) {
       terms: isSeller ? sellerTerms : terms,
       ...pay, ...(isSeller ? {} : { performanceFeeCents, productionFeeCents }),
       gmvPerHourCents: liveMinutes ? Math.round((s.gmvCents * 60) / liveMinutes) : null,
-      sources: { orders: b.results_status === 'pending' ? 'Delayed' : 'Imported', liveHours: 'Verified (studio log)', viewers: 'Unavailable', conversion: 'Unavailable' },
+      sources: { orders: b.results_status === 'pending' ? 'Delayed' : sandbox ? 'Sandbox (demo data)' : 'Imported', liveHours: 'Verified (studio log)', viewers: 'Unavailable', conversion: 'Unavailable' },
     };
   });
 

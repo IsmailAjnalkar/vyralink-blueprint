@@ -3,6 +3,9 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { createHmac } from 'node:crypto';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import pg from 'pg';
 import { buildApp } from '../src/app.js';
 import { COURSES } from '../src/academy.js';
@@ -14,6 +17,13 @@ let app, pool;
 const T = {}; // tokens
 const MFA = {}; // TOTP secrets, for signing in again
 const id = {};
+process.env.STORAGE_DIR = mkdtempSync(join(tmpdir(), 'vyralink-files-'));
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 1)]);
+const PDF = Buffer.from('%PDF-1.7\n% demo document\n');
+async function upload(purpose, bytes, { as, org, type = 'application/octet-stream' }) {
+  const res = await app.inject({ method: 'POST', url: `/v1/files/${purpose}`, headers: { authorization: `Bearer ${T[as]}`, 'x-org-id': org, 'content-type': type }, payload: bytes });
+  return { status: res.statusCode, body: JSON.parse(res.body) };
+}
 
 async function call(method, url, { as, org, body, token } = {}) {
   const bearer = token ?? (as ? T[as] : null);
@@ -94,11 +104,23 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   // Members join by email invitation, accepted with the invited account.
   await ok('POST', '/orgs/current/invitations', { ...brand, body: { email: 'leo@example.com', role: 'brand_marketing_manager' } });
   await ok('POST', '/invitations/accept', { as: 'leo', body: { token: tokenIn(await lastEmail('leo@example.com')) } });
-  const ver = await ok('POST', '/orgs/current/verification', { ...brand, body: { details: { legalName: 'GlowSkin Beauty LLC' }, documents: [{ type: 'formation', fileName: 'formation.pdf' }] } });
+  // Uploads: the file's bytes decide its type; a document is visible to its organization and platform staff only.
+  assert.equal((await upload('verification_document', Buffer.from('<script>alert(1)</script>'), { ...brand, type: 'application/pdf' })).body.code, 'file_type');
+  assert.equal((await upload('verification_document', PDF, { as: 'leo', org: id.brand })).status, 403); // Brand Owner only
+  const doc = await upload('verification_document', PDF, { ...brand, type: 'application/pdf' });
+  assert.equal(doc.status, 201);
+  assert.equal(doc.body.content_type, 'application/pdf');
+  id.doc = doc.body.id;
+  const ver = await ok('POST', '/orgs/current/verification', { ...brand, body: { details: { legalName: 'GlowSkin Beauty LLC' }, documents: [{ type: 'formation', fileName: 'formation.pdf', fileId: doc.body.id }] } });
   await ok('POST', `/admin/verifications/${ver.id}/decision`, { as: 'taylor', body: { decision: 'approve' } });
 
   // ---- product (BF02)
-  const product = await ok('POST', '/products', { ...brand, body: { name: 'Vitamin C Face Serum', sku: 'GS-VC-30', priceCents: 4000, category: 'skincare', inventory: 10000, samplesAvailable: 4, sellingPoints: ['Contains 15% vitamin C'], restrictedClaims: ['Cures acne'] } });
+  assert.equal((await upload('product_image', PDF, { ...brand, type: 'image/png' })).body.code, 'file_type'); // a PDF is not an image
+  const img = await upload('product_image', PNG, { ...brand, type: 'image/png' });
+  const product = await ok('POST', '/products', { ...brand, body: { name: 'Vitamin C Face Serum', sku: 'GS-VC-30', priceCents: 4000, category: 'skincare', inventory: 10000, samplesAvailable: 4, sellingPoints: ['Contains 15% vitamin C'], restrictedClaims: ['Cures acne'], imageFileId: img.body.id } });
+  assert.equal(product.image_file_id, img.body.id);
+  id.img = img.body.id;
+  assert.equal((await call('POST', '/products', { ...brand, body: { name: 'Doc as image', sku: 'GS-X', priceCents: 100, category: 'x', imageFileId: doc.body.id } })).status, 403); // wrong purpose
   id.product = product.id;
   const draftCampaign = await call('POST', '/campaigns', { ...brand, body: { name: 'Too early', type: 'live_shopping', productIds: [product.id], startsAt: new Date(Date.now() + 864e5).toISOString(), endsAt: new Date(Date.now() + 864e5 + 3 * 3.6e6).toISOString(), baseRateCents: 3000, productionFeeCents: 75000, budgetCapCents: 200000 } });
   assert.equal(draftCampaign.body.code, 'product_not_approved');
@@ -221,6 +243,15 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
 
   // ---- results import: 150 × $40, then 4 refunds (BF15, BF16)
   const csv = ['order_id,placed_at,amount_cents,status', ...Array.from({ length: 150 }, (_, i) => `O${i + 1},${new Date().toISOString()},4000,completed`)].join('\n');
+  // No orders integration is enabled by default: the CSV is the way in.
+  assert.equal((await call('POST', `/bookings/${id.booking}/results/sync`, { as: 'alex', org: id.ops })).body.code, 'provider_not_enabled');
+  // Sandbox orders provider (development): demo orders are imported through the same rules and labelled everywhere.
+  process.env.ORDERS_PROVIDER = 'sandbox';
+  const synced = await ok('POST', `/bookings/${id.booking}/results/sync`, { as: 'alex', org: id.ops });
+  assert.ok(synced.imported >= 20 && synced.source === 'sandbox');
+  assert.equal((await ok('GET', `/bookings/${id.booking}/settlement`, brand)).sources.orders, 'Sandbox (demo data)');
+  delete process.env.ORDERS_PROVIDER;
+  await pool.query(`DELETE FROM session_orders WHERE booking_id = $1 AND source = 'sandbox'`, [id.booking]); // back to the scenario's real report
   const imp = await ok('POST', `/bookings/${id.booking}/results`, { as: 'alex', org: id.ops, body: { csv } });
   assert.equal(imp.settlement.commissionCents, 30000);
   await ok('POST', `/bookings/${id.booking}/refunds`, { as: 'alex', org: id.ops, body: { csv: 'order_id,refund_cents\nO1,4000\nO2,4000\nO3,4000\nO4,4000' } });
@@ -353,6 +384,15 @@ test('suspended organizations are read-only', async () => {
   const shady = await signup('shady', 'brand', 'Shady Owner', { companyName: 'Shady Co' });
   await ok('POST', `/admin/orgs/${shady.orgId}/suspend`, { as: 'taylor', body: { reason: 'Fraud review' } });
   const asShady = { as: 'shady', org: shady.orgId };
+  const fetchFile = (fileId, who) => app.inject({ method: 'GET', url: `/v1/files/${fileId}`, headers: { authorization: `Bearer ${T[who.as]}`, ...(who.org ? { 'x-org-id': who.org } : {}) } });
+  assert.equal((await fetchFile(id.doc, asShady)).statusCode, 404); // another brand's document
+  assert.equal((await fetchFile(id.doc, { as: 'sarah' })).statusCode, 404); // a seller
+  const asAdmin = await fetchFile(id.doc, { as: 'taylor' });
+  assert.deepEqual([asAdmin.statusCode, asAdmin.headers['content-type'], asAdmin.headers['content-disposition'].startsWith('attachment')], [200, 'application/pdf', true]);
+  const image = await fetchFile(id.img, { as: 'sarah' }); // sellers see product images
+  assert.deepEqual([image.statusCode, image.headers['content-type'], image.headers['x-content-type-options']], [200, 'image/png', 'nosniff']);
+  assert.equal(image.rawPayload.length, PNG.length);
+  assert.equal((await upload('product_image', PNG, { ...asShady, type: 'image/png' })).status, 403); // suspended: read-only
   assert.equal((await call('POST', '/products', { ...asShady, body: { name: 'X', sku: 'X-1', priceCents: 100, category: 'misc' } })).status, 403);
   assert.equal((await call('POST', '/orgs/current/verification', { ...asShady, body: { details: {}, documents: [{ type: 'id', fileName: 'id.pdf' }] } })).status, 403);
   assert.equal((await call('GET', '/orgs/current', asShady)).status, 200);

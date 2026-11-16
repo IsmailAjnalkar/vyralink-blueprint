@@ -12,8 +12,8 @@ Status: **Working** (built and tested), **Partial**, **Missing**, **Blocked** (n
 | Sessions: expiry, revocation | Working | Working | |
 | Organizations, members, roles | Working | Working | incl. Support Admin, Brand Finance |
 | Organization invitations by email | Working | Working | |
-| Brand verification | Working | Working | document upload **Blocked** (no storage); file names recorded |
-| Products (incl. claims review) | Working | Working | image upload **Blocked** (no storage) |
+| Brand verification | Working | Working | documents uploaded (local storage), opened by the brand and reviewers only |
+| Products (incl. claims review) | Working | Working | image upload works (local storage) |
 | Campaigns (LIVE, LIVE DROP) + approval | Working | Working | UGC/influencer/affiliate/retainer types missing |
 | Creator discovery, profile, compare | Working (search, profile) | Working | compare is client-side |
 | Invitations, applications, counter-offers | Working | Working | counter/decline use a browser prompt (to be replaced by a dialog) |
@@ -36,8 +36,8 @@ Status: **Working** (built and tested), **Partial**, **Missing**, **Blocked** (n
 | Notifications (in-app) | Working | Working | email delivery **Blocked** (no provider) |
 | Messages | Working | Working | contact details masked (E2E-verified) |
 | Admin: verifications, moderation, orgs, users, flags, settings, audit | Working | Partial | review queue, organizations, settings, disputes; flags, user lock and audit viewer not built |
-| TikTok Shop API | Blocked | — | no partner access; CSV import works |
-| Stripe | Blocked | — | no account; simulated |
-| File storage (S3) | Missing | — | |
+| TikTok Shop API | Blocked | — | no partner access; CSV import works; sandbox demo-order provider for development (`ORDERS_PROVIDER=sandbox`) |
+| Stripe | Blocked | — | no account; sandbox provider; signed webhook handler ready |
+| File storage | Partial | Working | local-disk adapter (product images, verification documents); S3 **Blocked** (no bucket) |
 | Matching (rules-based, explained) | Missing | Missing | Phase 7 |
 | Docker / CI / staging | Missing | — | Phase 9 |

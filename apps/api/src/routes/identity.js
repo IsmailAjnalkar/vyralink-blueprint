@@ -4,6 +4,8 @@ import { tx } from '../db.js';
 import { COURSES, PASS_PCT, RETAKE_WAIT_HOURS, grade } from '../academy.js';
 import { audit, bad, body, conflict, forbidden, member, notify, notFound, one, orgUsers, platformStaff, superAdmin, user, BRAND } from '../http.js';
 import { allowedRoles, managerRoles } from './auth.js';
+import { ownFile } from './files.js';
+import { integrations } from '../providers.js';
 
 /** Verified track record from completed sessions on Vyralink (never self-reported). */
 export const SELLER_STATS_SQL = `
@@ -70,9 +72,10 @@ export default async function identity(app) {
     if (!rows.length) throw conflict('An organization needs at least one Brand Owner. Make someone else owner first.', 'last_owner');
   }
 
-  app.post('/orgs/current/verification', { schema: body({ details: 'object', documents: { type: 'array', minItems: 1, maxItems: 20, items: { type: 'object', required: ['type', 'fileName'], properties: { type: { type: 'string' }, fileName: { type: 'string' } } } } }) }, async (req, reply) => {
+  app.post('/orgs/current/verification', { schema: body({ details: 'object', documents: { type: 'array', minItems: 1, maxItems: 20, items: { type: 'object', required: ['type', 'fileName'], additionalProperties: false, properties: { type: { type: 'string', maxLength: 100 }, fileName: { type: 'string', maxLength: 200 }, fileId: { type: 'string', format: 'uuid' } } } } }) }, async (req, reply) => {
     const m = member(req, ['brand_owner']);
     return tx(pool, async (db) => {
+      for (const d of req.body.documents) if (d.fileId) await ownFile(db, m.orgId, d.fileId, 'verification_document');
       const org = await one(db, 'SELECT status FROM orgs WHERE id = $1 FOR UPDATE', [m.orgId]);
       if (['verified', 'submitted', 'in_review'].includes(org.status)) throw conflict(`Verification is already ${org.status}`);
       const { rows: [{ v }] } = await db.query('SELECT COALESCE(max(version), 0) + 1 AS v FROM verifications WHERE org_id = $1', [m.orgId]);
@@ -260,6 +263,12 @@ export default async function identity(app) {
     if (!p) throw notFound('Seller not found');
     await audit(pool, req, 'seller.provider_status', 'user', req.params.id, b);
     return p;
+  });
+
+  // Which integrations run for real and which are sandbox/blocked. No secrets: shown in the UI so labels stay honest.
+  app.get('/integrations', async (req) => {
+    user(req);
+    return integrations();
   });
 
   app.get('/admin/flags', async (req) => {

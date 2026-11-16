@@ -11,8 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, usd } from "@/lib/api";
 import { useAction, useLoad } from "@/lib/use-load";
 
-type Verification = { id: string; org_name: string; version: number; status: string; details: Record<string, string>; documents: { type: string; fileName: string }[]; created_at: string };
-type Product = { id: string; name: string; brand: string; sku: string; price_cents: number; category: string; description: string; selling_points: string[]; restricted_claims: string[] };
+type Verification = { id: string; org_name: string; version: number; status: string; details: Record<string, string>; documents: { type: string; fileName: string; fileId?: string }[]; created_at: string };
+type Product = { id: string; image_file_id: string | null; name: string; brand: string; sku: string; price_cents: number; category: string; description: string; selling_points: string[]; restricted_claims: string[] };
 type Org = { id: string; name: string; kind: string; status: string; members: number };
 type User = { id: string; name: string; email: string; locked: boolean; memberships: unknown[] };
 
@@ -23,6 +23,7 @@ export default function AdminPage() {
   const users = useLoad(() => api<User[]>("admin/users"), "users");
   const orgs = useLoad(() => api<Org[]>("admin/orgs"), "orgs");
   const settings = useLoad(() => api<Record<string, unknown>>("admin/settings"), "settings");
+  const integrations = useLoad(() => api<{ name: string; provider: string; status: string; detail: string }[]>("integrations"), "integrations");
   const act = useAction(() => Promise.all([ver.reload(), prods.reload(), orgs.reload(), settings.reload()]));
   const [q, setQ] = useState("");
   const canDecide = me.user.is_super_admin;
@@ -45,6 +46,7 @@ export default function AdminPage() {
           <TabsTrigger value="sellers">Seller checks</TabsTrigger>
           <TabsTrigger value="orgs">Organizations</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="ver" className="grid gap-3">
@@ -58,7 +60,7 @@ export default function AdminPage() {
               <CardContent className="grid gap-3 text-sm">
                 <dl className="grid gap-x-4 sm:grid-cols-[max-content_1fr]">
                   {Object.entries(v.details).filter(([, val]) => val).map(([k, val]) => <Fragment key={k}><dt className="text-muted-foreground">{k}</dt><dd>{val}</dd></Fragment>)}
-                  <dt className="text-muted-foreground">documents</dt><dd>{v.documents.map((d) => `${d.type}: ${d.fileName}`).join(" · ")}</dd>
+                  <dt className="text-muted-foreground">documents</dt><dd>{v.documents.map((d, i) => <span key={i}>{i ? " · " : ""}{d.type}: {d.fileId ? <a className="underline" href={`/api/files/${d.fileId}`}>{d.fileName}</a> : `${d.fileName} (not uploaded)`}</span>)}</dd>
                 </dl>
                 {canDecide && (
                   <div className="flex gap-2">
@@ -77,7 +79,7 @@ export default function AdminPage() {
           {prods.data?.map((p) => (
             <Card key={p.id}>
               <CardHeader>
-                <CardTitle>{p.name}</CardTitle>
+                <CardTitle className="flex items-center gap-3">{p.image_file_id && <img src={`/api/files/${p.image_file_id}`} alt={`${p.name} product image`} className="size-12 rounded object-cover" />}{p.name}</CardTitle>
                 <CardDescription>{p.brand} · {p.sku} · {p.category} · {usd(p.price_cents)}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-2 text-sm">
@@ -142,6 +144,16 @@ export default function AdminPage() {
             <Table>
               <TableHeader><TableRow><TableHead>Organization</TableHead><TableHead>Kind</TableHead><TableHead>Status</TableHead><TableHead>Members</TableHead></TableRow></TableHeader>
               <TableBody>{orgs.data?.map((o) => <TableRow key={o.id}><TableCell className="font-medium">{o.name}</TableCell><TableCell>{o.kind === "operator" ? "Creator Hub" : "Brand"}</TableCell><TableCell><Status value={o.status} /></TableCell><TableCell>{o.members}</TableCell></TableRow>)}</TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="integrations" className="grid gap-3">
+          <p className="text-sm text-muted-foreground">Set by environment variables on the server (see docs/DEPLOYMENT.md). Production refuses to start on sandbox, dev or blocked providers.</p>
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader><TableRow><TableHead>Integration</TableHead><TableHead>Provider</TableHead><TableHead>Status</TableHead><TableHead>What it means</TableHead></TableRow></TableHeader>
+              <TableBody>{integrations.data?.map((i) => <TableRow key={i.name}><TableCell className="font-medium">{i.name}</TableCell><TableCell className="font-mono">{i.provider}</TableCell><TableCell><Status value={i.status === "blocked" ? "blocked" : i.status} /></TableCell><TableCell className="max-w-md text-xs">{i.detail}</TableCell></TableRow>)}</TableBody>
             </Table>
           </div>
         </TabsContent>

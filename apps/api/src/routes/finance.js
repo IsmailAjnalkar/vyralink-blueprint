@@ -6,12 +6,15 @@ import { decimal, toCsv } from '../csv.js';
 import { setting, tx } from '../db.js';
 import { audit, bad, body, conflict, member, notify, notFound, one, orgUsers, requireMfa, superAdmin, user, BRAND, BRAND_BILLING, HttpError } from '../http.js';
 import { loadSettlement, lockResults } from '../settle.js';
+import { provider } from '../providers.js';
 import { assertMove } from '../status.js';
 
 const FIN = ['finance_admin'];
 /** SQL: the booking in column `col` was run by the operator org in parameter `p`. */
 const OWNS = (col, p) => `EXISTS (SELECT 1 FROM bookings ob JOIN booths obo ON obo.id = ob.booth_id JOIN locations ol ON ol.id = obo.location_id WHERE ob.id = ${col} AND ol.org_id = ${p})`;
 const UNPAID = `('provisional', 'locked', 'scheduled')`;
+/** Hand-recorded payments and simulated payouts exist only in sandbox mode; with a real provider its webhooks decide. */
+const sandboxOnly = () => { if (provider('payments') !== 'sandbox') throw conflict('Payments are handled by the payment provider; this is recorded from its webhook', 'provider_managed'); };
 
 async function finBooking(db, req, id) {
   const m = member(req, FIN);
@@ -59,6 +62,7 @@ export default async function finance(app) {
 
   /** Simulates the payment provider confirming a charge (webhook). Nothing is marked paid without it. */
   app.post('/invoices/:id/paid', async (req) => {
+    sandboxOnly();
     return tx(pool, async (db) => {
       const i = await finInvoice(db, req, req.params.id);
       assertMove('invoice', i.status, 'paid');
@@ -205,6 +209,7 @@ export default async function finance(app) {
 
   /** Simulates the payment provider sending the payouts. failSellerIds lets tests and demos exercise failures. */
   app.post('/payout-runs/:id/execute', { schema: body({ failSellerIds: 'uuids?', failureReason: 'string?' }) }, async (req) => {
+    sandboxOnly();
     return tx(pool, async (db) => {
       const run = await finRun(db, req, req.params.id);
       if (run.status !== 'approved') throw conflict('Approve the run first', 'not_approved');
@@ -227,6 +232,7 @@ export default async function finance(app) {
   });
 
   app.post('/payouts/:id/retry', async (req) => {
+    sandboxOnly();
     const m = member(req, FIN);
     return tx(pool, async (db) => {
       const p = await one(db, `SELECT p.*, sp.payout_verified FROM payouts p JOIN payout_runs r ON r.id = p.run_id JOIN seller_profiles sp ON sp.user_id = p.seller_id WHERE p.id = $1 AND r.org_id = $2 FOR UPDATE OF p`, [req.params.id, m.orgId], 'Payout not found');
@@ -469,7 +475,7 @@ export default async function finance(app) {
     return {
       campaign: c.name, status: c.status, final: bk.results_status === 'locked',
       results: { orders: s.orders, gmvCents: s.gmvCents, refundsCents: s.refundsCents, netSalesCents: s.gmvCents - s.refundsCents, liveMinutes, gmvPerHourCents: liveMinutes ? Math.round((s.gmvCents * 60) / liveMinutes) : null, averageOrderCents: s.orders ? Math.round(s.gmvCents / s.orders) : null, conversionRate: null },
-      sources: { orders: bk.results_status === 'pending' ? 'Delayed' : 'Imported', liveHours: 'Verified', conversionRate: 'Unavailable' },
+      sources: { orders: bk.results_status === 'pending' ? 'Delayed' : (await pool.query(`SELECT bool_or(source = 'sandbox') AS s FROM session_orders WHERE booking_id = $1`, [bk.id])).rows[0].s ? 'Sandbox (demo data)' : 'Imported', liveHours: 'Verified', conversionRate: 'Unavailable' },
       campaignCostCents: costCents, gmvToCostRatio: costCents ? Math.round((s.gmvCents / costCents) * 10) / 10 : null,
       definitions: { gmv: 'Your merchandise sales in TikTok Shop attributed to the LIVE. Not Vyralink or Creator Hub revenue.', campaignCost: 'Fees invoiced by Creator Hub for this campaign.' },
       incidents, invoices,

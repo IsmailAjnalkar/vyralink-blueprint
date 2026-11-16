@@ -3,13 +3,14 @@ import { useState } from "react";
 import { FormError, TextField } from "@/components/form";
 import { textareaClass } from "@/components/bits";
 import { Button } from "@/components/ui/button";
-import { toUnits } from "@/lib/api";
+import { useSession } from "@/components/shell";
+import { ApiError, toUnits, uploadFile } from "@/lib/api";
 
 export type Product = {
   id: string; name: string; sku: string; price_cents: number; category: string; inventory: number; samples_available: number; commission_bps: number;
-  description: string; selling_points: string[]; restricted_claims: string[]; status: string; review_note: string | null;
+  description: string; selling_points: string[]; restricted_claims: string[]; status: string; review_note: string | null; image_file_id: string | null;
 };
-export type ProductBody = { name: string; sku?: string; category?: string; priceCents: number; inventory: number; samplesAvailable: number; commissionBps?: number; description: string; sellingPoints: string[]; restrictedClaims: string[] };
+export type ProductBody = { imageFileId?: string; name: string; sku?: string; category?: string; priceCents: number; inventory: number; samplesAvailable: number; commissionBps?: number; description: string; sellingPoints: string[]; restrictedClaims: string[] };
 
 const lines = (v: FormDataEntryValue | null) => String(v ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
 const int = (v: FormDataEntryValue | null) => (String(v ?? "").trim() === "" ? 0 : Number(v));
@@ -17,6 +18,17 @@ const int = (v: FormDataEntryValue | null) => (String(v ?? "").trim() === "" ? 0
 /** Product fields; money and percentages are parsed to integer cents/basis points before they leave the form. */
 export function ProductForm({ initial, onSubmit, busy, submitLabel, isNew }: { initial?: Product; onSubmit: (b: ProductBody) => unknown; busy: boolean; submitLabel: string; isNew?: boolean }) {
   const [error, setError] = useState<string | null>(null);
+  const { current } = useSession();
+  const [image, setImage] = useState<string | null>(initial?.image_file_id ?? null);
+  const [uploading, setUploading] = useState(false);
+
+  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try { setImage((await uploadFile("product_image", file, current?.org_id)).id); } catch (err) { setError(err instanceof ApiError ? err.message : "Upload failed."); } finally { setUploading(false); }
+  }
 
   function submit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -32,7 +44,7 @@ export function ProductForm({ initial, onSubmit, busy, submitLabel, isNew }: { i
     onSubmit({
       name: String(f.get("name")).trim(),
       ...(isNew ? { sku: String(f.get("sku")).trim(), category: String(f.get("category")).trim() } : {}),
-      priceCents, inventory, samplesAvailable, ...(commission !== null ? { commissionBps: commission } : {}),
+      priceCents, inventory, samplesAvailable, ...(image && image !== initial?.image_file_id ? { imageFileId: image } : {}), ...(commission !== null ? { commissionBps: commission } : {}),
       description: String(f.get("description") ?? ""), sellingPoints: lines(f.get("sellingPoints")), restrictedClaims: lines(f.get("restrictedClaims")),
     });
   }
@@ -66,8 +78,15 @@ export function ProductForm({ initial, onSubmit, busy, submitLabel, isNew }: { i
           <textarea id="restrictedClaims" name="restrictedClaims" className={textareaClass} defaultValue={p?.restricted_claims.join("\n")} />
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">Product images need object storage, which isn’t configured in this environment yet.</p>
-      <Button type="submit" disabled={busy} className="w-fit">{submitLabel}</Button>
+      <div className="flex flex-wrap items-center gap-4">
+        {image && <img src={`/api/files/${image}`} alt="Product image" className="size-24 rounded-md border object-cover" />}
+        <div className="grid gap-1.5">
+          <label htmlFor="image" className="text-sm font-medium">Product image</label>
+          <input id="image" type="file" accept="image/png,image/jpeg,image/webp" onChange={pick} className="text-sm" aria-describedby="image-hint" />
+          <p id="image-hint" className="text-xs text-muted-foreground">{uploading ? "Uploading…" : "PNG, JPEG or WebP, up to 5 MB."}</p>
+        </div>
+      </div>
+      <Button type="submit" disabled={busy || uploading} className="w-fit">{submitLabel}</Button>
     </form>
   );
 }

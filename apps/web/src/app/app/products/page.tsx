@@ -42,7 +42,7 @@ export default function ProductsPage() {
             <TableBody>
               {list.data.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell><Link href={`/app/products/${p.id}`} className="font-medium underline-offset-2 hover:underline">{p.name}</Link></TableCell>
+                  <TableCell><Link href={`/app/products/${p.id}`} className="flex items-center gap-2 font-medium underline-offset-2 hover:underline">{p.image_file_id ? <img src={`/api/files/${p.image_file_id}`} alt="" className="size-8 rounded object-cover" /> : <span className="size-8 rounded bg-muted" aria-hidden />}{p.name}</Link></TableCell>
                   <TableCell>{p.sku}</TableCell>
                   <TableCell>{usd(p.price_cents)}</TableCell>
                   <TableCell>{pct(p.commission_bps)}</TableCell>

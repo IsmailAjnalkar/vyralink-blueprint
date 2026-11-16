@@ -30,5 +30,13 @@ export function toUnits(input: string | null | undefined): number | null {
 /** Basis points to a percent label: 1250 → "12.5%". */
 export const pct = (bps: number | null | undefined) => (bps == null ? "—" : `${bps / 100}%`);
 
+/** Uploads a file as the raw request body; the API decides its type from the bytes. Returns the stored file record. */
+export async function uploadFile(purpose: "product_image" | "verification_document", file: File, org?: string): Promise<{ id: string; content_type: string }> {
+  const res = await fetch(`/api/files/${purpose}`, { method: "POST", headers: { "content-type": file.type || "application/octet-stream", ...(org ? { "x-org-id": org } : {}) }, body: file });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, data?.error ?? "Upload failed", data?.code);
+  return data;
+}
+
 /** Money is integer cents in the API; format only for display. */
 export const usd = (cents: number | null | undefined) => (cents == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100));

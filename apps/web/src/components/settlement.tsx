@@ -17,6 +17,7 @@ export function SessionResults({ bookingId, org, canImport }: { bookingId: strin
   const s = useLoad(() => api<Settlement>(`bookings/${bookingId}/settlement`, { org }), `${org}:${bookingId}`);
   const act = useAction(s.reload);
   const d = s.data;
+  const orders = useLoad(() => api<{ name: string; provider: string }[]>("integrations").then((l) => l.find((i) => i.name === "orders")?.provider ?? "csv"), "integrations");
 
   function upload(kind: "results" | "refunds") {
     return async (e: React.SubmitEvent<HTMLFormElement>) => {
@@ -54,6 +55,14 @@ export function SessionResults({ bookingId, org, canImport }: { bookingId: strin
               ))}
             </tbody>
           </table>
+        )}
+        {canImport && d && d.resultsStatus !== "locked" && orders.data && orders.data !== "csv" && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" disabled={act.busy} onClick={() => act.run(() => api<{ imported: number }>(`bookings/${bookingId}/results/sync`, { org, body: {} }), (r) => `${r.imported} orders synced${orders.data === "sandbox" ? " (sandbox demo data)" : ""}.`)}>
+              {orders.data === "sandbox" ? "Load sandbox orders (demo data)" : "Sync from TikTok Shop"}
+            </Button>
+            {orders.data === "sandbox" && <span className="text-xs text-muted-foreground">Development only. Demo orders are labelled wherever they appear.</span>}
+          </div>
         )}
         {canImport && d && d.resultsStatus !== "locked" && (
           <form onSubmit={upload("results")} className="grid gap-2">

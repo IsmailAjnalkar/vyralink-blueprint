@@ -13,6 +13,17 @@ npm start -w @vyralink/worker   # jobs + email outbox (.dev-mail/)
 npm run dev:web        # web  http://localhost:3020
 ```
 
+## Integrations (one switch each)
+
+| Variable | Values | Today |
+|---|---|---|
+| `PAYMENTS_PROVIDER` | `sandbox` (default) · `stripe` | sandbox. Stripe adapter not built: no account |
+| `EMAIL_PROVIDER` | `dev` (default, writes `DEV_MAIL_DIR`) · `smtp` | dev. No email provider account |
+| `STORAGE_PROVIDER` | `local` (default, `STORAGE_DIR`, default `.storage`) · `s3` | local. No bucket |
+| `ORDERS_PROVIDER` | `csv` (default) · `sandbox` (development/test demo orders) · `tiktok_shop` | csv. No TikTok Shop partner access |
+
+The API logs the active providers at startup and **refuses to start with `NODE_ENV=production`** while any of them is sandbox, dev or blocked. The admin console shows the same table (Review queue → Integrations).
+
 ## Client IP and proxies
 
 Per-IP rate limits and the session list depend on the real client address. Count only the proxies you run:
