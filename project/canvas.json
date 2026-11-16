@@ -1,0 +1,1630 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-16T01:50:23Z"
+  },
+  "title": "Vyralink + Creator Hub — LIVE Commerce Blueprint",
+  "launch": {
+    "view": "canvas",
+    "page": "overview"
+  },
+  "pages": [
+    {
+      "id": "overview",
+      "name": "1 · Overview and IA"
+    },
+    {
+      "id": "flows",
+      "name": "2 · Master business flow"
+    },
+    {
+      "id": "brand",
+      "name": "3 · Brand portal (B01–B18)"
+    },
+    {
+      "id": "creator",
+      "name": "4 · Creator portal (C01–C27) · mobile and desktop"
+    },
+    {
+      "id": "ops",
+      "name": "5 · Creator Hub operations (O01–O24)"
+    },
+    {
+      "id": "finadmin",
+      "name": "6 · Finance, Super Admin, AI matching"
+    },
+    {
+      "id": "bflows",
+      "name": "7 · Business flowcharts (BF01–BF21)"
+    },
+    {
+      "id": "journeys",
+      "name": "8 · Edge cases and user journeys"
+    },
+    {
+      "id": "handoff",
+      "name": "9 · Components, developer handoff, QA"
+    }
+  ],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 3000,
+      "page": "overview",
+      "expand": "fill",
+      "title": "Read me · blueprint overview"
+    },
+    "IA.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 1440,
+      "h": 2900,
+      "page": "overview",
+      "expand": "fill",
+      "title": "D2 · Information architecture"
+    },
+    "MasterFlow.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 3888,
+      "h": 3864,
+      "page": "flows",
+      "title": "D1 · Master business flow"
+    },
+    "brand/B01.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1500,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B01 · Brand registration"
+    },
+    "brand/B02.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 1440,
+      "h": 1700,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B02 · Company verification"
+    },
+    "brand/B03.dc.html": {
+      "x": 3040,
+      "y": 0,
+      "w": 1440,
+      "h": 1700,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B03 · Brand onboarding"
+    },
+    "brand/B04.dc.html": {
+      "x": 0,
+      "y": 1820,
+      "w": 1440,
+      "h": 1900,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B04 · Dashboard"
+    },
+    "brand/B05.dc.html": {
+      "x": 1520,
+      "y": 1820,
+      "w": 1440,
+      "h": 1500,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B05 · Product catalog"
+    },
+    "brand/B06.dc.html": {
+      "x": 3040,
+      "y": 1820,
+      "w": 1440,
+      "h": 2100,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B06 · Product detail"
+    },
+    "brand/B07.dc.html": {
+      "x": 0,
+      "y": 4040,
+      "w": 1440,
+      "h": 2500,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B07 · Create campaign"
+    },
+    "brand/B08.dc.html": {
+      "x": 1520,
+      "y": 4040,
+      "w": 1440,
+      "h": 1700,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B08 · Campaigns"
+    },
+    "brand/B09.dc.html": {
+      "x": 3040,
+      "y": 4040,
+      "w": 1440,
+      "h": 1800,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B09 · Find creators"
+    },
+    "brand/B10.dc.html": {
+      "x": 0,
+      "y": 6660,
+      "w": 1440,
+      "h": 2000,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B10 · Creator profile"
+    },
+    "brand/B11.dc.html": {
+      "x": 1520,
+      "y": 6660,
+      "w": 1440,
+      "h": 1400,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B11 · Compare sellers"
+    },
+    "brand/B12.dc.html": {
+      "x": 3040,
+      "y": 6660,
+      "w": 1440,
+      "h": 1700,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B12 · Invitations and applications"
+    },
+    "brand/B13.dc.html": {
+      "x": 0,
+      "y": 8780,
+      "w": 1440,
+      "h": 1500,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B13 · LIVE calendar"
+    },
+    "brand/B14.dc.html": {
+      "x": 1520,
+      "y": 8780,
+      "w": 1440,
+      "h": 2100,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B14 · Campaign detail"
+    },
+    "brand/B15.dc.html": {
+      "x": 3040,
+      "y": 8780,
+      "w": 1440,
+      "h": 1800,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B15 · Analytics"
+    },
+    "brand/B16.dc.html": {
+      "x": 0,
+      "y": 11000,
+      "w": 1440,
+      "h": 1700,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B16 · Billing"
+    },
+    "brand/B17.dc.html": {
+      "x": 1520,
+      "y": 11000,
+      "w": 1440,
+      "h": 1400,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B17 · Messages and notifications"
+    },
+    "brand/B18.dc.html": {
+      "x": 3040,
+      "y": 11000,
+      "w": 1440,
+      "h": 2000,
+      "page": "brand",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "B18 · Team and settings"
+    },
+    "creator/C01.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 776,
+      "h": 1500,
+      "page": "creator",
+      "title": "C01 · Become a LIVE Seller · mobile"
+    },
+    "creator/C02.dc.html": {
+      "x": 856,
+      "y": 0,
+      "w": 776,
+      "h": 1800,
+      "page": "creator",
+      "title": "C02 · Your profile · mobile"
+    },
+    "creator/C03.dc.html": {
+      "x": 1712,
+      "y": 0,
+      "w": 776,
+      "h": 1600,
+      "page": "creator",
+      "title": "C03 · Identity and payout · mobile"
+    },
+    "creator/C04.dc.html": {
+      "x": 2568,
+      "y": 0,
+      "w": 776,
+      "h": 1600,
+      "page": "creator",
+      "title": "C04 · LIVE skills and experience · mobile"
+    },
+    "creator/C05.dc.html": {
+      "x": 3424,
+      "y": 0,
+      "w": 776,
+      "h": 1400,
+      "page": "creator",
+      "title": "C05 · Creator Hub Academy · mobile"
+    },
+    "creator/C06.dc.html": {
+      "x": 0,
+      "y": 1920,
+      "w": 776,
+      "h": 1500,
+      "page": "creator",
+      "title": "C06 · Lesson 3 of 6 · mobile"
+    },
+    "creator/C07.dc.html": {
+      "x": 856,
+      "y": 1920,
+      "w": 776,
+      "h": 1500,
+      "page": "creator",
+      "title": "C07 · Final check · mobile"
+    },
+    "creator/C08.dc.html": {
+      "x": 1712,
+      "y": 1920,
+      "w": 776,
+      "h": 1500,
+      "page": "creator",
+      "title": "C08 · Hi, Sarah · mobile"
+    },
+    "creator/C09.dc.html": {
+      "x": 2568,
+      "y": 1920,
+      "w": 776,
+      "h": 1600,
+      "page": "creator",
+      "title": "C09 · Find LIVE jobs · mobile"
+    },
+    "creator/C10.dc.html": {
+      "x": 3424,
+      "y": 1920,
+      "w": 776,
+      "h": 2600,
+      "page": "creator",
+      "title": "C10 · Job detail · mobile"
+    },
+    "creator/C11.dc.html": {
+      "x": 0,
+      "y": 4640,
+      "w": 776,
+      "h": 2000,
+      "page": "creator",
+      "title": "C11 · My applications · mobile"
+    },
+    "creator/C12.dc.html": {
+      "x": 856,
+      "y": 4640,
+      "w": 776,
+      "h": 2300,
+      "page": "creator",
+      "title": "C12 · Contract · mobile"
+    },
+    "creator/C13.dc.html": {
+      "x": 1712,
+      "y": 4640,
+      "w": 776,
+      "h": 1300,
+      "page": "creator",
+      "title": "C13 · My LIVE sessions · mobile"
+    },
+    "creator/C14.dc.html": {
+      "x": 2568,
+      "y": 4640,
+      "w": 776,
+      "h": 1500,
+      "page": "creator",
+      "title": "C14 · Getting there · mobile"
+    },
+    "creator/C15.dc.html": {
+      "x": 3424,
+      "y": 4640,
+      "w": 776,
+      "h": 1600,
+      "page": "creator",
+      "title": "C15 · Check in · mobile"
+    },
+    "creator/C16.dc.html": {
+      "x": 0,
+      "y": 7060,
+      "w": 776,
+      "h": 2100,
+      "page": "creator",
+      "title": "C16 · Product briefing · mobile"
+    },
+    "creator/C17.dc.html": {
+      "x": 856,
+      "y": 7060,
+      "w": 776,
+      "h": 1600,
+      "page": "creator",
+      "title": "C17 · Ready to go LIVE? · mobile"
+    },
+    "creator/C18.dc.html": {
+      "x": 1712,
+      "y": 7060,
+      "w": 776,
+      "h": 1600,
+      "page": "creator",
+      "title": "C18 · On air · mobile"
+    },
+    "creator/C19.dc.html": {
+      "x": 2568,
+      "y": 7060,
+      "w": 776,
+      "h": 1500,
+      "page": "creator",
+      "title": "C19 · Completed sessions · mobile"
+    },
+    "creator/C20.dc.html": {
+      "x": 3424,
+      "y": 7060,
+      "w": 776,
+      "h": 1500,
+      "page": "creator",
+      "title": "C20 · Earnings · mobile"
+    },
+    "creator/C21.dc.html": {
+      "x": 0,
+      "y": 9280,
+      "w": 776,
+      "h": 1800,
+      "page": "creator",
+      "title": "C21 · Pay breakdown · mobile"
+    },
+    "creator/C22.dc.html": {
+      "x": 856,
+      "y": 9280,
+      "w": 776,
+      "h": 1400,
+      "page": "creator",
+      "title": "C22 · Payouts · mobile"
+    },
+    "creator/C23.dc.html": {
+      "x": 1712,
+      "y": 9280,
+      "w": 776,
+      "h": 1500,
+      "page": "creator",
+      "title": "C23 · Performance · mobile"
+    },
+    "creator/C24.dc.html": {
+      "x": 2568,
+      "y": 9280,
+      "w": 776,
+      "h": 1500,
+      "page": "creator",
+      "title": "C24 · Portfolio and reviews · mobile"
+    },
+    "creator/C25.dc.html": {
+      "x": 3424,
+      "y": 9280,
+      "w": 776,
+      "h": 1300,
+      "page": "creator",
+      "title": "C25 · Inbox · mobile"
+    },
+    "creator/C26.dc.html": {
+      "x": 0,
+      "y": 11200,
+      "w": 776,
+      "h": 1700,
+      "page": "creator",
+      "title": "C26 · Availability · mobile"
+    },
+    "creator/C27.dc.html": {
+      "x": 856,
+      "y": 11200,
+      "w": 776,
+      "h": 1500,
+      "page": "creator",
+      "title": "C27 · Settings · mobile"
+    },
+    "creator/MoreMenu.dc.html": {
+      "x": 1712,
+      "y": 11200,
+      "w": 776,
+      "h": 1000,
+      "page": "creator",
+      "title": "Mobile · More menu"
+    },
+    "creator/C08-desktop.dc.html": {
+      "x": 0,
+      "y": 13320,
+      "w": 1440,
+      "h": 1300,
+      "page": "creator",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "C08 · Dashboard · desktop"
+    },
+    "creator/C09-desktop.dc.html": {
+      "x": 1520,
+      "y": 13320,
+      "w": 1440,
+      "h": 1300,
+      "page": "creator",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "C09 · Find LIVE jobs · desktop"
+    },
+    "creator/C20-desktop.dc.html": {
+      "x": 3040,
+      "y": 13320,
+      "w": 1440,
+      "h": 1300,
+      "page": "creator",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "C20 · Earnings · desktop"
+    },
+    "ops/O01.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1700,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O01 · Operations dashboard"
+    },
+    "ops/O02.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 1440,
+      "h": 1300,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O02 · All locations"
+    },
+    "ops/O03.dc.html": {
+      "x": 3040,
+      "y": 0,
+      "w": 1440,
+      "h": 1700,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O03 · Location details"
+    },
+    "ops/O04.dc.html": {
+      "x": 0,
+      "y": 1820,
+      "w": 1440,
+      "h": 1500,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O04 · Booth inventory"
+    },
+    "ops/O05.dc.html": {
+      "x": 1520,
+      "y": 1820,
+      "w": 1440,
+      "h": 1500,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O05 · Booth availability"
+    },
+    "ops/O06.dc.html": {
+      "x": 3040,
+      "y": 1820,
+      "w": 1440,
+      "h": 1700,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O06 · Studio bookings"
+    },
+    "ops/O07.dc.html": {
+      "x": 0,
+      "y": 3640,
+      "w": 1440,
+      "h": 1500,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O07 · Producer schedule"
+    },
+    "ops/O08.dc.html": {
+      "x": 1520,
+      "y": 3640,
+      "w": 1440,
+      "h": 1500,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O08 · Equipment"
+    },
+    "ops/O09.dc.html": {
+      "x": 3040,
+      "y": 3640,
+      "w": 1440,
+      "h": 1600,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O09 · Product receiving"
+    },
+    "ops/O10.dc.html": {
+      "x": 0,
+      "y": 5360,
+      "w": 1440,
+      "h": 1400,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O10 · Sample inventory"
+    },
+    "ops/O11.dc.html": {
+      "x": 1520,
+      "y": 5360,
+      "w": 1440,
+      "h": 1300,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O11 · Storage and movement"
+    },
+    "ops/O12.dc.html": {
+      "x": 3040,
+      "y": 5360,
+      "w": 1440,
+      "h": 1500,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O12 · Seller check-in"
+    },
+    "ops/O13.dc.html": {
+      "x": 0,
+      "y": 6980,
+      "w": 1440,
+      "h": 1800,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O13 · Pre-LIVE readiness"
+    },
+    "ops/O14.dc.html": {
+      "x": 1520,
+      "y": 6980,
+      "w": 1440,
+      "h": 3300,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O14 · LIVE Control Center"
+    },
+    "ops/O15.dc.html": {
+      "x": 3040,
+      "y": 6980,
+      "w": 1440,
+      "h": 1700,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O15 · Session monitoring"
+    },
+    "ops/O16.dc.html": {
+      "x": 0,
+      "y": 10400,
+      "w": 1440,
+      "h": 1800,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O16 · Incidents"
+    },
+    "ops/O17.dc.html": {
+      "x": 1520,
+      "y": 10400,
+      "w": 1440,
+      "h": 1900,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O17 · Session closeout"
+    },
+    "ops/O18.dc.html": {
+      "x": 3040,
+      "y": 10400,
+      "w": 1440,
+      "h": 1400,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O18 · Returns and reconciliation"
+    },
+    "ops/O19.dc.html": {
+      "x": 0,
+      "y": 12420,
+      "w": 1440,
+      "h": 1300,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O19 · Studio utilization"
+    },
+    "ops/O20.dc.html": {
+      "x": 1520,
+      "y": 12420,
+      "w": 1440,
+      "h": 1400,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O20 · Location performance"
+    },
+    "ops/O21.dc.html": {
+      "x": 3040,
+      "y": 12420,
+      "w": 1440,
+      "h": 1500,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O21 · Staff"
+    },
+    "ops/O22.dc.html": {
+      "x": 0,
+      "y": 14040,
+      "w": 1440,
+      "h": 1800,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O22 · Operations settings"
+    },
+    "ops/O23.dc.html": {
+      "x": 1520,
+      "y": 14040,
+      "w": 1440,
+      "h": 1600,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O23 · Seller roster"
+    },
+    "ops/O24.dc.html": {
+      "x": 3040,
+      "y": 14040,
+      "w": 1440,
+      "h": 1500,
+      "page": "ops",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "O24 · Brand accounts"
+    },
+    "ops/O12-tablet.dc.html": {
+      "x": 4560,
+      "y": 0,
+      "w": 1154,
+      "h": 1100,
+      "page": "ops",
+      "title": "O12 · Seller check-in · tablet 768 px"
+    },
+    "fin/F01.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1600,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "F01 · Finance overview"
+    },
+    "fin/F02.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 1440,
+      "h": 1900,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "F02 · Brand invoices and receivables"
+    },
+    "fin/F03.dc.html": {
+      "x": 3040,
+      "y": 0,
+      "w": 1440,
+      "h": 1600,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "F03 · Seller earnings ledger"
+    },
+    "fin/F04.dc.html": {
+      "x": 0,
+      "y": 2020,
+      "w": 1440,
+      "h": 1700,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "F04 · Payout runs"
+    },
+    "fin/F05.dc.html": {
+      "x": 1520,
+      "y": 2020,
+      "w": 1440,
+      "h": 2000,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "F05 · Reconciliation"
+    },
+    "fin/F06.dc.html": {
+      "x": 3040,
+      "y": 2020,
+      "w": 1440,
+      "h": 1400,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "F06 · Campaign profitability"
+    },
+    "fin/F07.dc.html": {
+      "x": 0,
+      "y": 4140,
+      "w": 1440,
+      "h": 1400,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "F07 · Location profitability"
+    },
+    "fin/F08.dc.html": {
+      "x": 1520,
+      "y": 4140,
+      "w": 1440,
+      "h": 1400,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "F08 · Operating expenses"
+    },
+    "admin/A01.dc.html": {
+      "x": 0,
+      "y": 5960,
+      "w": 1440,
+      "h": 1500,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A01 · Platform overview"
+    },
+    "admin/A02.dc.html": {
+      "x": 1520,
+      "y": 5960,
+      "w": 1440,
+      "h": 1600,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A02 · Organizations"
+    },
+    "admin/A03.dc.html": {
+      "x": 3040,
+      "y": 5960,
+      "w": 1440,
+      "h": 1500,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A03 · Users"
+    },
+    "admin/A04.dc.html": {
+      "x": 0,
+      "y": 7680,
+      "w": 1440,
+      "h": 1800,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A04 · Verifications"
+    },
+    "admin/A05.dc.html": {
+      "x": 1520,
+      "y": 7680,
+      "w": 1440,
+      "h": 1700,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A05 · Campaign moderation"
+    },
+    "admin/A06.dc.html": {
+      "x": 3040,
+      "y": 7680,
+      "w": 1440,
+      "h": 1500,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A06 · Commerce integrations"
+    },
+    "admin/A07.dc.html": {
+      "x": 0,
+      "y": 9600,
+      "w": 1440,
+      "h": 1500,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A07 · Payments"
+    },
+    "admin/A08.dc.html": {
+      "x": 1520,
+      "y": 9600,
+      "w": 1440,
+      "h": 1900,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A08 · Disputes"
+    },
+    "admin/A09.dc.html": {
+      "x": 3040,
+      "y": 9600,
+      "w": 1440,
+      "h": 1400,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A09 · Audit logs"
+    },
+    "admin/A10.dc.html": {
+      "x": 0,
+      "y": 11620,
+      "w": 1440,
+      "h": 1500,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A10 · Security"
+    },
+    "admin/A11.dc.html": {
+      "x": 1520,
+      "y": 11620,
+      "w": 1440,
+      "h": 1300,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A11 · Feature flags"
+    },
+    "admin/A12.dc.html": {
+      "x": 3040,
+      "y": 11620,
+      "w": 1440,
+      "h": 1700,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "A12 · Platform settings"
+    },
+    "brand/M01.dc.html": {
+      "x": 0,
+      "y": 13740,
+      "w": 1440,
+      "h": 2200,
+      "page": "finadmin",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "M01 · AI seller matching (Phase 3)"
+    },
+    "flows/BF01.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 2568,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF01 · Brand onboarding"
+    },
+    "flows/BF02.dc.html": {
+      "x": 3300,
+      "y": 0,
+      "w": 2288,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF02 · Product onboarding"
+    },
+    "flows/BF03.dc.html": {
+      "x": 6600,
+      "y": 0,
+      "w": 2848,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF03 · Campaign creation"
+    },
+    "flows/BF04.dc.html": {
+      "x": 0,
+      "y": 932,
+      "w": 2008,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF04 · Campaign approval"
+    },
+    "flows/BF05.dc.html": {
+      "x": 3300,
+      "y": 932,
+      "w": 2008,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF05 · Seller matching"
+    },
+    "flows/BF06.dc.html": {
+      "x": 6600,
+      "y": 932,
+      "w": 2288,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF06 · Seller invitation and application"
+    },
+    "flows/BF07.dc.html": {
+      "x": 0,
+      "y": 1864,
+      "w": 2288,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF07 · Contract and compensation confirmation"
+    },
+    "flows/BF08.dc.html": {
+      "x": 3300,
+      "y": 1864,
+      "w": 2288,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF08 · Studio booking"
+    },
+    "flows/BF09.dc.html": {
+      "x": 6600,
+      "y": 1864,
+      "w": 2008,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF09 · Product shipping and receiving"
+    },
+    "flows/BF10.dc.html": {
+      "x": 0,
+      "y": 2796,
+      "w": 2008,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF10 · Producer scheduling"
+    },
+    "flows/BF11.dc.html": {
+      "x": 3300,
+      "y": 2796,
+      "w": 2008,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF11 · Seller check-in"
+    },
+    "flows/BF12.dc.html": {
+      "x": 6600,
+      "y": 2796,
+      "w": 2568,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF12 · Pre-LIVE readiness"
+    },
+    "flows/BF13.dc.html": {
+      "x": 0,
+      "y": 3728,
+      "w": 2288,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF13 · LIVE session operations"
+    },
+    "flows/BF14.dc.html": {
+      "x": 3300,
+      "y": 3728,
+      "w": 2008,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF14 · Customer purchase and fulfillment"
+    },
+    "flows/BF15.dc.html": {
+      "x": 6600,
+      "y": 3728,
+      "w": 2288,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF15 · LIVE analytics ingestion"
+    },
+    "flows/BF16.dc.html": {
+      "x": 0,
+      "y": 4660,
+      "w": 2288,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF16 · Creator earnings calculation"
+    },
+    "flows/BF17.dc.html": {
+      "x": 3300,
+      "y": 4660,
+      "w": 2288,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF17 · Creator Hub invoicing"
+    },
+    "flows/BF18.dc.html": {
+      "x": 6600,
+      "y": 4660,
+      "w": 2568,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF18 · Payment reconciliation"
+    },
+    "flows/BF19.dc.html": {
+      "x": 0,
+      "y": 5592,
+      "w": 2288,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF19 · Campaign reporting"
+    },
+    "flows/BF20.dc.html": {
+      "x": 3300,
+      "y": 5592,
+      "w": 2008,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF20 · Repeat campaign"
+    },
+    "flows/BF21.dc.html": {
+      "x": 6600,
+      "y": 5592,
+      "w": 2288,
+      "h": 812,
+      "page": "bflows",
+      "is_interactive": true,
+      "title": "BF21 · Multi-location expansion"
+    },
+    "edge/EdgeCases.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 2600,
+      "page": "journeys",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "§11 · Edge cases and recovery"
+    },
+    "journeys/J1.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 3968,
+      "h": 812,
+      "page": "journeys",
+      "is_interactive": true,
+      "title": "J1 · Brand Owner · from sign-up to repeat"
+    },
+    "journeys/J2.dc.html": {
+      "x": 1520,
+      "y": 932,
+      "w": 4248,
+      "h": 812,
+      "page": "journeys",
+      "is_interactive": true,
+      "title": "J2 · LIVE Seller · from sign-up to payout"
+    },
+    "journeys/J3.dc.html": {
+      "x": 1520,
+      "y": 1864,
+      "w": 2568,
+      "h": 812,
+      "page": "journeys",
+      "is_interactive": true,
+      "title": "J3 · Brand Marketing Manager · campaign under approval"
+    },
+    "journeys/J4.dc.html": {
+      "x": 1520,
+      "y": 2796,
+      "w": 2848,
+      "h": 812,
+      "page": "journeys",
+      "is_interactive": true,
+      "title": "J4 · Studio Producer · one LIVE day"
+    },
+    "journeys/J5.dc.html": {
+      "x": 1520,
+      "y": 3728,
+      "w": 2288,
+      "h": 812,
+      "page": "journeys",
+      "is_interactive": true,
+      "title": "J5 · Location Manager · running the studio"
+    },
+    "journeys/J6.dc.html": {
+      "x": 1520,
+      "y": 4660,
+      "w": 2288,
+      "h": 812,
+      "page": "journeys",
+      "is_interactive": true,
+      "title": "J6 · Inventory Coordinator · samples in and out"
+    },
+    "journeys/J7.dc.html": {
+      "x": 1520,
+      "y": 5592,
+      "w": 2848,
+      "h": 812,
+      "page": "journeys",
+      "is_interactive": true,
+      "title": "J7 · Finance Administrator · month in finance"
+    },
+    "journeys/J8.dc.html": {
+      "x": 1520,
+      "y": 6524,
+      "w": 2288,
+      "h": 812,
+      "page": "journeys",
+      "is_interactive": true,
+      "title": "J8 · Super Admin · platform oversight"
+    },
+    "library/QA.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 2600,
+      "page": "handoff",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "§16 · Quality audit"
+    },
+    "library/Components.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 1440,
+      "h": 6200,
+      "page": "handoff",
+      "expand": "fill",
+      "title": "D9 · Component library"
+    },
+    "handoff/H01.dc.html": {
+      "x": 0,
+      "y": 6620,
+      "w": 1440,
+      "h": 7420,
+      "page": "handoff",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "D10 · Handoff B01–B10"
+    },
+    "handoff/H02.dc.html": {
+      "x": 1520,
+      "y": 6620,
+      "w": 1440,
+      "h": 7420,
+      "page": "handoff",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "D10 · Handoff B11–C01"
+    },
+    "handoff/H03.dc.html": {
+      "x": 3040,
+      "y": 6620,
+      "w": 1440,
+      "h": 7420,
+      "page": "handoff",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "D10 · Handoff C02–C11"
+    },
+    "handoff/H04.dc.html": {
+      "x": 0,
+      "y": 14160,
+      "w": 1440,
+      "h": 7420,
+      "page": "handoff",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "D10 · Handoff C12–C21"
+    },
+    "handoff/H05.dc.html": {
+      "x": 1520,
+      "y": 14160,
+      "w": 1440,
+      "h": 7420,
+      "page": "handoff",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "D10 · Handoff C22–O04"
+    },
+    "handoff/H06.dc.html": {
+      "x": 3040,
+      "y": 14160,
+      "w": 1440,
+      "h": 7420,
+      "page": "handoff",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "D10 · Handoff O05–O14"
+    },
+    "handoff/H07.dc.html": {
+      "x": 0,
+      "y": 21700,
+      "w": 1440,
+      "h": 7420,
+      "page": "handoff",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "D10 · Handoff O15–O24"
+    },
+    "handoff/H08.dc.html": {
+      "x": 1520,
+      "y": 21700,
+      "w": 1440,
+      "h": 7420,
+      "page": "handoff",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "D10 · Handoff F01–A02"
+    },
+    "handoff/H09.dc.html": {
+      "x": 3040,
+      "y": 21700,
+      "w": 1440,
+      "h": 7420,
+      "page": "handoff",
+      "expand": "fill",
+      "is_interactive": true,
+      "title": "D10 · Handoff A03–A12"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "IA.dc.html",
+    "MasterFlow.dc.html",
+    "brand/B01.dc.html",
+    "brand/B02.dc.html",
+    "brand/B03.dc.html",
+    "brand/B04.dc.html",
+    "brand/B05.dc.html",
+    "brand/B06.dc.html",
+    "brand/B07.dc.html",
+    "brand/B08.dc.html",
+    "brand/B09.dc.html",
+    "brand/B10.dc.html",
+    "brand/B11.dc.html",
+    "brand/B12.dc.html",
+    "brand/B13.dc.html",
+    "brand/B14.dc.html",
+    "brand/B15.dc.html",
+    "brand/B16.dc.html",
+    "brand/B17.dc.html",
+    "brand/B18.dc.html",
+    "creator/C01.dc.html",
+    "creator/C02.dc.html",
+    "creator/C03.dc.html",
+    "creator/C04.dc.html",
+    "creator/C05.dc.html",
+    "creator/C06.dc.html",
+    "creator/C07.dc.html",
+    "creator/C08.dc.html",
+    "creator/C09.dc.html",
+    "creator/C10.dc.html",
+    "creator/C11.dc.html",
+    "creator/C12.dc.html",
+    "creator/C13.dc.html",
+    "creator/C14.dc.html",
+    "creator/C15.dc.html",
+    "creator/C16.dc.html",
+    "creator/C17.dc.html",
+    "creator/C18.dc.html",
+    "creator/C19.dc.html",
+    "creator/C20.dc.html",
+    "creator/C21.dc.html",
+    "creator/C22.dc.html",
+    "creator/C23.dc.html",
+    "creator/C24.dc.html",
+    "creator/C25.dc.html",
+    "creator/C26.dc.html",
+    "creator/C27.dc.html",
+    "creator/MoreMenu.dc.html",
+    "creator/C08-desktop.dc.html",
+    "creator/C09-desktop.dc.html",
+    "creator/C20-desktop.dc.html",
+    "ops/O01.dc.html",
+    "ops/O02.dc.html",
+    "ops/O03.dc.html",
+    "ops/O04.dc.html",
+    "ops/O05.dc.html",
+    "ops/O06.dc.html",
+    "ops/O07.dc.html",
+    "ops/O08.dc.html",
+    "ops/O09.dc.html",
+    "ops/O10.dc.html",
+    "ops/O11.dc.html",
+    "ops/O12.dc.html",
+    "ops/O13.dc.html",
+    "ops/O14.dc.html",
+    "ops/O15.dc.html",
+    "ops/O16.dc.html",
+    "ops/O17.dc.html",
+    "ops/O18.dc.html",
+    "ops/O19.dc.html",
+    "ops/O20.dc.html",
+    "ops/O21.dc.html",
+    "ops/O22.dc.html",
+    "ops/O23.dc.html",
+    "ops/O24.dc.html",
+    "ops/O12-tablet.dc.html",
+    "fin/F01.dc.html",
+    "fin/F02.dc.html",
+    "fin/F03.dc.html",
+    "fin/F04.dc.html",
+    "fin/F05.dc.html",
+    "fin/F06.dc.html",
+    "fin/F07.dc.html",
+    "fin/F08.dc.html",
+    "admin/A01.dc.html",
+    "admin/A02.dc.html",
+    "admin/A03.dc.html",
+    "admin/A04.dc.html",
+    "admin/A05.dc.html",
+    "admin/A06.dc.html",
+    "admin/A07.dc.html",
+    "admin/A08.dc.html",
+    "admin/A09.dc.html",
+    "admin/A10.dc.html",
+    "admin/A11.dc.html",
+    "admin/A12.dc.html",
+    "brand/M01.dc.html",
+    "flows/BF01.dc.html",
+    "flows/BF02.dc.html",
+    "flows/BF03.dc.html",
+    "flows/BF04.dc.html",
+    "flows/BF05.dc.html",
+    "flows/BF06.dc.html",
+    "flows/BF07.dc.html",
+    "flows/BF08.dc.html",
+    "flows/BF09.dc.html",
+    "flows/BF10.dc.html",
+    "flows/BF11.dc.html",
+    "flows/BF12.dc.html",
+    "flows/BF13.dc.html",
+    "flows/BF14.dc.html",
+    "flows/BF15.dc.html",
+    "flows/BF16.dc.html",
+    "flows/BF17.dc.html",
+    "flows/BF18.dc.html",
+    "flows/BF19.dc.html",
+    "flows/BF20.dc.html",
+    "flows/BF21.dc.html",
+    "edge/EdgeCases.dc.html",
+    "journeys/J1.dc.html",
+    "journeys/J2.dc.html",
+    "journeys/J3.dc.html",
+    "journeys/J4.dc.html",
+    "journeys/J5.dc.html",
+    "journeys/J6.dc.html",
+    "journeys/J7.dc.html",
+    "journeys/J8.dc.html",
+    "library/QA.dc.html",
+    "library/Components.dc.html",
+    "handoff/H01.dc.html",
+    "handoff/H02.dc.html",
+    "handoff/H03.dc.html",
+    "handoff/H04.dc.html",
+    "handoff/H05.dc.html",
+    "handoff/H06.dc.html",
+    "handoff/H07.dc.html",
+    "handoff/H08.dc.html",
+    "handoff/H09.dc.html"
+  ],
+  "notes": {
+    "overviewTitle": {
+      "x": 0,
+      "y": -300,
+      "text": "Vyralink + Creator Hub · complete blueprint",
+      "kind": "title1",
+      "maxW": 2960,
+      "page": "overview"
+    },
+    "brandTitle": {
+      "x": 0,
+      "y": -300,
+      "text": "D3 · Brand portal wireframes · B01–B18",
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "brand"
+    },
+    "brandTip": {
+      "x": 4560,
+      "y": 0,
+      "w": 320,
+      "text": "Press Play on any brand screen: the sidebar and buttons move between screens. Dashed “State ·” panels show errors and edge cases; the dashed rail on the right holds spec notes.",
+      "fill": "gray",
+      "page": "brand"
+    },
+    "creatorTitle": {
+      "x": 0,
+      "y": -300,
+      "text": "D4 + D8 · Creator portal · mobile first (390 px)",
+      "kind": "title1",
+      "maxW": 4200,
+      "page": "creator"
+    },
+    "creatorDesktopTitle": {
+      "x": 0,
+      "y": 13020,
+      "text": "Creator portal · desktop (1440 px)",
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "creator"
+    },
+    "creatorTip": {
+      "x": 4280,
+      "y": 0,
+      "w": 320,
+      "text": "Phone frames show each screen at full length. The tab bar (Home, Jobs, Sessions, Earnings, More) links between screens in Play. Bottom-sheet panels show overlays such as Accept, Counter and Decline.",
+      "fill": "gray",
+      "page": "creator"
+    },
+    "opsTitle": {
+      "x": 0,
+      "y": -300,
+      "text": "D5 · Creator Hub operations · O01–O24",
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "ops"
+    },
+    "opsTip": {
+      "x": 4560,
+      "y": 1220,
+      "w": 360,
+      "text": "Start at O14 LIVE Control Center: 4 simultaneous sessions, detail drawer, escalation and emergency-stop workflow. Tabs at the top of each section (Control Center, Inventory, Sellers…) link sibling screens in Play.",
+      "fill": "gray",
+      "page": "ops"
+    },
+    "finTitle": {
+      "x": 0,
+      "y": -300,
+      "text": "D6 · Creator Hub finance · F01–F08",
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "finadmin"
+    },
+    "adminTitle": {
+      "x": 0,
+      "y": 5660,
+      "text": "D6 · Super Admin console · A01–A12",
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "finadmin"
+    },
+    "mTitle": {
+      "x": 0,
+      "y": 13440,
+      "text": "§9 · AI matching · Phase 3 preview",
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "finadmin"
+    },
+    "finTip": {
+      "x": 4560,
+      "y": 0,
+      "w": 360,
+      "text": "Money rules used everywhere: GMV is brand sales, never revenue. Seller pay is a Creator Hub expense. One eligible-sales base drives both the performance fee and seller commission. No escrow: brand charges and seller payouts are separate provider flows.",
+      "fill": "gray",
+      "page": "finadmin"
+    },
+    "bflowsTitle": {
+      "x": 0,
+      "y": -300,
+      "text": "§10 · 21 business flowcharts",
+      "kind": "title1",
+      "maxW": 9900,
+      "page": "bflows"
+    },
+    "bflowsTip": {
+      "x": 9900,
+      "y": 0,
+      "w": 380,
+      "text": "Each flow: header (trigger, actors, statuses, notifications, screens), then start → numbered steps → end. Diamonds are decisions; the dashed “No” card below is the failure or alternate path and its recovery. Dashed step cards happen outside Vyralink (TikTok Shop). Screen IDs are links.",
+      "fill": "gray",
+      "page": "bflows"
+    },
+    "journeysTitle": {
+      "x": 0,
+      "y": -300,
+      "text": "§11 edge cases · D7 connected user journeys",
+      "kind": "title1",
+      "maxW": 8000,
+      "page": "journeys"
+    },
+    "handoffTitle": {
+      "x": 0,
+      "y": -300,
+      "text": "§16 audit · D9 components",
+      "kind": "title1",
+      "maxW": 2960,
+      "page": "handoff"
+    },
+    "handoffTitle2": {
+      "x": 0,
+      "y": 6320,
+      "text": "D10 · Developer handoff · all 90 screens",
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "handoff"
+    }
+  },
+  "designSystems": []
+}
