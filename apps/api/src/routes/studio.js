@@ -188,10 +188,77 @@ export default async function studio(app) {
     });
   });
 
-  /**
-   * Brand Owner moves a held slot to a new time before any contract carries the old one.
-   * ponytail: confirmed sessions are cancelled and rebooked; a two-party reschedule request flow comes when brands need it.
-   */
+  /** Which party the caller is on a booking: the booked seller, or the brand (any brand role reads; only the owner acts). */
+  const partyOf = (req, b, act) => {
+    const u = user(req);
+    if (b.seller_id === u.id) return 'seller';
+    const m = req.membership;
+    if (m?.orgId === b.brand_org && BRAND.includes(m.role)) {
+      if (act) member(req, ['brand_owner']); // 403 for other brand roles (and checks MFA where the role needs it)
+      return 'brand';
+    }
+    if (!act && m?.orgId === b.ops_org && FLOOR.includes(m.role)) return 'studio';
+    throw notFound('Booking not found');
+  };
+  const BUSY = { bookings_booth_id_slot_excl: 'The booth is booked at that time.', bookings_producer_id_slot_excl: 'The producer is booked at that time. The studio can assign another producer, then accept again.', bookings_seller_id_slot_excl: 'The seller has another session at that time.' };
+
+  app.get('/bookings/:id/reschedule-requests', async (req) => {
+    const b = await one(pool, BOOKING_SQL, [req.params.id], 'Booking not found');
+    partyOf(req, b, false);
+    return (await pool.query(`SELECT r.*, u.name AS requested_by_name FROM reschedule_requests r JOIN users u ON u.id = r.requested_by WHERE booking_id = $1 ORDER BY created_at DESC`, [b.id])).rows;
+  });
+
+  // Either side of a confirmed session proposes a new time; the other side decides.
+  app.post('/bookings/:id/reschedule-requests', { schema: body({ startsAt: 'datetime', endsAt: 'datetime', reason: 'string' }) }, async (req) => {
+    return tx(pool, async (db) => {
+      const b = await one(db, `${BOOKING_SQL} FOR UPDATE OF b`, [req.params.id], 'Booking not found');
+      const side = partyOf(req, b, true);
+      if (b.status !== 'confirmed') throw conflict('Only a confirmed session that hasn’t started can be rescheduled.', 'not_confirmed');
+      const start = new Date(req.body.startsAt), end = new Date(req.body.endsAt);
+      if (!(end > start) || start <= new Date()) throw bad('Choose a future start and an end after it');
+      if (!req.body.reason.trim()) throw bad('Say why the time needs to change');
+      const { rows: open } = await db.query(`SELECT 1 FROM reschedule_requests WHERE booking_id = $1 AND status = 'pending'`, [b.id]);
+      if (open.length) throw conflict('There is already a proposal waiting. Withdraw it or wait for an answer.', 'pending_exists');
+      const { rows: [r] } = await db.query(`INSERT INTO reschedule_requests (booking_id, side, requested_by, starts_at, ends_at, reason) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [b.id, side, req.user.id, start, end, req.body.reason.trim()]);
+      await audit(db, req, 'booking.reschedule_proposed', 'booking', b.id, { request: r.id, to: [start, end] });
+      const other = side === 'brand' ? [b.seller_id] : await orgUsers(db, b.brand_org, ['brand_owner']);
+      await notify(db, other, 'booking', `${b.campaign}: new time proposed (${start.toISOString()}). Accept or decline.`);
+      return r;
+    });
+  });
+
+  app.post('/reschedule-requests/:id/decision', { schema: body({ decision: { enum: ['accept', 'decline', 'withdraw'] }, note: 'string?' }) }, async (req) => {
+    return tx(pool, async (db) => {
+      const r = await one(db, 'SELECT * FROM reschedule_requests WHERE id = $1 FOR UPDATE', [req.params.id], 'Request not found');
+      const b = await one(db, `${BOOKING_SQL} FOR UPDATE OF b`, [r.booking_id], 'Booking not found');
+      const side = partyOf(req, b, true);
+      if (r.status !== 'pending') throw conflict(`This proposal was already ${r.status}.`, 'not_pending');
+      const { decision } = req.body;
+      if (decision === 'withdraw' ? side !== r.side : side === r.side) throw forbidden(decision === 'withdraw' ? 'Only the side that proposed can withdraw.' : 'The other side decides on this proposal.');
+      if (decision === 'accept') {
+        if (b.status !== 'confirmed') throw conflict('The session is no longer confirmed, so it can’t be moved.', 'not_confirmed');
+        if (new Date(r.starts_at) <= new Date()) throw conflict('The proposed time has passed. Propose a new one.', 'expired');
+        const loc = await one(db, 'SELECT setup_min, teardown_min FROM locations WHERE id = $1', [b.location_id]);
+        try {
+          // The exclusion constraints refuse the move if the booth, producer or seller is busy then (setup and teardown included).
+          await db.query(`UPDATE bookings SET starts_at = $2, ends_at = $3, slot = tstzrange($2::timestamptz - make_interval(mins => $4), $3::timestamptz + make_interval(mins => $5)) WHERE id = $1`, [b.id, r.starts_at, r.ends_at, loc.setup_min, loc.teardown_min]);
+        } catch (err) {
+          if (err.code === '23P01') err.friendly = BUSY[err.constraint];
+          throw err;
+        }
+        await db.query('UPDATE campaigns SET starts_at = $2, ends_at = $3 WHERE id = $1', [b.campaign_id, r.starts_at, r.ends_at]);
+        await audit(db, req, 'booking.rescheduled', 'booking', b.id, { request: r.id, from: [b.starts_at, b.ends_at], to: [r.starts_at, r.ends_at] });
+      }
+      const status = { accept: 'accepted', decline: 'declined', withdraw: 'withdrawn' }[decision];
+      const { rows: [done] } = await db.query(`UPDATE reschedule_requests SET status = $2, decided_by = $3, decided_at = now(), note = $4 WHERE id = $1 RETURNING *`, [r.id, status, req.user.id, req.body.note ?? null]);
+      if (decision !== 'accept') await audit(db, req, `booking.reschedule_${status}`, 'booking', b.id, { request: r.id });
+      const everyone = [...(await orgUsers(db, b.brand_org, ['brand_owner'])), b.seller_id, ...(decision === 'accept' ? [b.producer_id, ...(await orgUsers(db, b.ops_org, ['location_manager']))] : [])];
+      await notify(db, everyone.filter((id) => id && id !== req.user.id), 'booking', decision === 'accept' ? `${b.campaign} moved to ${new Date(r.starts_at).toISOString()} (both sides agreed)` : `${b.campaign}: proposed new time ${status}`);
+      return done;
+    });
+  });
+
+  /** Brand Owner moves a held slot to a new time before any contract carries the old one. Confirmed sessions: reschedule requests above. */
   app.post('/bookings/:id/reschedule', { schema: body({ startsAt: 'datetime', endsAt: 'datetime' }) }, async (req) => {
     return tx(pool, async (db) => {
       const m = member(req, ['brand_owner']);

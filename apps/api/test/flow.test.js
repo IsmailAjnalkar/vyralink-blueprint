@@ -208,6 +208,37 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   assert.deepEqual(mine[0].products[0].restrictedClaims, ['Cures acne']); // the briefing: what to say and what never to say
   assert.deepEqual(await ok('GET', '/seller/bookings', { as: 'priya' }), []);
 
+  // ---- two-party reschedule of the confirmed session: one side proposes, only the other decides
+  const at = (h) => ({ startsAt: new Date(start.getTime() + h * 3.6e6).toISOString(), endsAt: new Date(end.getTime() + h * 3.6e6).toISOString() });
+  const rr = (b) => `/bookings/${id.booking}/reschedule-requests${b ?? ''}`;
+  const decide = (r, who, decision) => call('POST', `/reschedule-requests/${r.id}/decision`, { ...who, body: { decision } });
+  const p1 = await ok('POST', rr(), { as: 'sarah', body: { ...at(24), reason: 'Travel delay' } });
+  assert.equal((await call('POST', rr(), { ...brand, body: { ...at(48), reason: 'x' } })).body.code, 'pending_exists');
+  assert.equal((await decide(p1, { as: 'sarah' }, 'accept')).status, 403); // can't accept your own proposal
+  assert.equal((await decide(p1, { as: 'leo', org: id.brand }, 'accept')).status, 403); // brand owner decides
+  assert.equal((await call('GET', rr(), { as: 'priya' })).status, 404);
+  assert.equal((await ok('GET', rr(), rosa)).length, 1); // the studio can see it
+  assert.equal((await decide(p1, brand, 'decline')).body.status, 'declined');
+  // A clash at the proposed time is refused on accept, by the booth's no-overlap rule, with a clear reason.
+  const clashCamp = await ok('POST', '/campaigns', { ...brand, body: { name: 'Clash LIVE', ...terms, ...at(72) } });
+  await ok('POST', `/campaigns/${clashCamp.id}/publish`, brand);
+  await ok('POST', `/campaigns/${clashCamp.id}/hold`, { ...brand, body: { boothId: booth2.id } });
+  const p2 = await ok('POST', rr(), { ...brand, body: { ...at(72), reason: 'Launch moved' } });
+  const busy = await decide(p2, { as: 'sarah' }, 'accept');
+  assert.deepEqual([busy.status, busy.body.error], [409, 'The booth is booked at that time.']);
+  assert.equal((await decide(p2, { as: 'sarah' }, 'withdraw')).status, 403); // only the proposer withdraws
+  assert.equal((await decide(p2, brand, 'withdraw')).body.status, 'withdrawn');
+  await ok('POST', `/campaigns/${clashCamp.id}/cancel`, { ...brand, body: { confirm: true } });
+  // Accepted: the booking and the campaign move; then back again so the rest of the flow keeps its timing.
+  const p3 = await ok('POST', rr(), { ...brand, body: { ...at(24), reason: 'Launch moved' } });
+  assert.equal((await decide(p3, { as: 'sarah' }, 'accept')).body.status, 'accepted');
+  assert.equal(new Date((await ok('GET', '/seller/bookings', { as: 'sarah' }))[0].starts_at).getTime(), start.getTime() + 24 * 3.6e6);
+  const p4 = await ok('POST', rr(), { as: 'sarah', body: { ...at(0), reason: 'Back to the original time' } });
+  await ok('POST', `/reschedule-requests/${p4.id}/decision`, { ...brand, body: { decision: 'accept' } });
+  assert.equal(new Date((await ok('GET', `/campaigns/${camp.id}`, brand)).starts_at).getTime(), start.getTime());
+  const log = (await ok('GET', '/admin/audit?action=booking.rescheduled', { as: 'taylor' })).filter((a) => a.detail.request); // the two above; hold moves have no request
+  assert.equal(log.length, 2);
+
   // ---- samples (BF09)
   const ship = await ok('POST', `/bookings/${id.booking}/shipments`, { ...brand, body: { productId: product.id, expectedQty: 4, tracking: 'TRACK-1' } });
   assert.equal((await ok('POST', `/shipments/${ship.id}/receive`, { as: 'sam', org: id.ops, body: { receivedQty: 4, condition: 'good', shelf: 'S2' } })).status, 'received');

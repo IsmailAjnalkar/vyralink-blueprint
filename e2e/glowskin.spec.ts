@@ -298,6 +298,35 @@ test("studio confirms with a producer; samples are shipped and received; the ses
   await expect(page.getByRole("status")).toContainText("Moved to Beauty Booth 02");
 });
 
+test("a confirmed session's time changes only when both sides agree", async () => {
+  const day = 24 * 3.6e6;
+  const propose = async (p: Page, from: Date, to: Date, reason: string, who: string) => {
+    await p.getByText("Propose a new time").click();
+    await p.getByLabel("New start").fill(localInput(from));
+    await p.getByLabel("New end").fill(localInput(to));
+    await p.getByLabel("Why the time needs to change").fill(reason);
+    await p.getByRole("button", { name: "Send proposal" }).click();
+    await expect(p.getByRole("status").filter({ hasText: `Proposed. The ${who} decides.` })).toBeVisible();
+  };
+  await brandPage.goto(campaignUrl);
+  await propose(brandPage, new Date(start.getTime() + day), new Date(end.getTime() + day), "Launch moved a day", "seller");
+  await expect(brandPage.getByText("Waiting for the seller to answer.")).toBeVisible();
+
+  await sellerPage.goto("/app/sessions");
+  await expect(sellerPage.getByText("Launch moved a day")).toBeVisible();
+  expect(await axe(sellerPage)).toEqual([]);
+  await sellerPage.getByRole("button", { name: "Accept new time" }).click();
+  await expect(sellerPage.getByRole("status").filter({ hasText: "Accepted. The session moved" })).toBeVisible();
+
+  // Back to the original time, proposed by the seller this time; the brand owner accepts.
+  await propose(sellerPage, start, end, "Can make the original day after all", "brand");
+  await brandPage.reload();
+  expect(await axe(brandPage)).toEqual([]);
+  await brandPage.getByRole("button", { name: "Accept new time" }).click();
+  await expect(brandPage.getByRole("status").filter({ hasText: "Accepted. The session moved" })).toBeVisible();
+  await expect(brandPage.getByText(/Last proposal .*accepted/i)).toBeVisible();
+});
+
 test("seller sees the code and briefing; producer checks in, runs readiness and gives the Go", async () => {
   const s = sellerPage;
   await s.goto("/app/sessions");

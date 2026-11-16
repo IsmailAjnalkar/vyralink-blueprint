@@ -16,6 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Reschedule } from "@/components/reschedule";
 import { api, pct, toUnits, usd } from "@/lib/api";
 import type { Campaign, Shipment } from "@/lib/types";
 import { useAction, useLoad } from "@/lib/use-load";
@@ -175,7 +176,7 @@ export default function CampaignPage() {
   );
 }
 
-/** Brand side of a booking: ship samples to the studio; move a held slot to another time. */
+/** Brand side of a booking: ship samples to the studio; move a held slot, or propose a new time for a confirmed one. */
 function BookingTools({ booking, campaign, org, isOwner, canReschedule, onDone }: { booking: Booking; campaign: Campaign; org: string; isOwner: boolean; canReschedule: boolean; onDone: () => unknown }) {
   const ships = useLoad(() => api<Shipment[]>(`bookings/${booking.id}/shipments`, { org }), booking.id);
   const products = useLoad(() => api<Product[]>("products", { org }).then((ps) => ps.filter((p) => campaign.product_ids.includes(p.id))), `${org}:${campaign.id}`);
@@ -213,6 +214,7 @@ function BookingTools({ booking, campaign, org, isOwner, canReschedule, onDone }
           <Button type="submit" size="sm" disabled={act.busy}>Announce shipment</Button>
         </form>
       </div>
+      {booking.status === "confirmed" && <Reschedule bookingId={booking.id} org={org} side="brand" canAct={isOwner} startsAt={booking.starts_at} endsAt={booking.ends_at} onDone={onDone} />}
       {booking.status === "hold" && isOwner && (
         <div className="grid gap-2">
           <h3 className="text-sm font-semibold">Reschedule the hold</h3>
@@ -222,7 +224,7 @@ function BookingTools({ booking, campaign, org, isOwner, canReschedule, onDone }
               <TextField id="rs-end" name="end" label="New end" type="datetime-local" defaultValue={local(campaign.ends_at)} required />
               <Button type="submit" size="sm" variant="outline" disabled={act.busy}>Move hold</Button>
             </form>
-          ) : <p className="text-sm text-muted-foreground">A contract already states this time. To change it, cancel and book again.</p>}
+          ) : <p className="text-sm text-muted-foreground">A contract already states this time. To change it, propose a new time once the studio confirms, or cancel and book again.</p>}
         </div>
       )}
     </div>
