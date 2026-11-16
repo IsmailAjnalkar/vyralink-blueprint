@@ -33,7 +33,7 @@ export default function NotificationsPage() {
           const to = href(n.link);
           const urgent = n.kind === "incident" && n.body.startsWith("Emergency stop");
           return (
-            <li key={n.id} className={`flex flex-wrap items-start gap-3 rounded-md border p-3 text-sm ${urgent ? "border-destructive bg-destructive/5" : n.read_at ? "opacity-70" : ""}`}>
+            <li key={n.id} className={`flex flex-wrap items-start gap-3 rounded-md border p-3 text-sm ${urgent ? "border-destructive border-l-4" : n.read_at ? "opacity-70" : ""}`}>
               <Badge variant={urgent ? "destructive" : "outline"}>{n.kind}</Badge>
               <div className="min-w-0 flex-1">
                 <p className={n.read_at ? "" : "font-medium"}>{n.body}</p>

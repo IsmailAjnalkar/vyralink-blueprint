@@ -6,6 +6,7 @@
 //   readiness → Go. Overlap is refused; a fresh hold is rescheduled.
 // Only the platform admin's MFA enrolment uses the API directly (the code is computed here; the UI login uses it).
 import { readFileSync } from "node:fs";
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { COURSES } from "../apps/api/src/academy.js";
 import { call, closeDb, emailToken, freshCode, localInput, signInUi, signUpUi } from "./helpers";
@@ -368,12 +369,12 @@ test("control center updates in real time: LIVE start, manual numbers, incidents
   await mine.getByRole("button", { name: "Open incident" }).click();
   await expect(session).toContainText("Ring light flickering");
 
-  const answers = ["Replaced the bulb", "2"];
-  const reply = (d: import("@playwright/test").Dialog) => d.accept(answers.shift());
-  board.on("dialog", reply);
   await session.locator("li", { hasText: "Ring light flickering" }).getByRole("button", { name: "Resolve" }).click();
+  const dialog = board.getByRole("dialog", { name: "Resolve incident" });
+  await dialog.getByLabel("How was it resolved?").fill("Replaced the bulb");
+  await dialog.getByLabel(/Minutes of LIVE lost/).fill("2");
+  await dialog.getByRole("button", { name: "Resolve" }).click();
   await expect(session).not.toContainText("Ring light flickering");
-  board.off("dialog", reply);
 });
 
 test("emergency stop reaches the seller; the session is closed out", async () => {
@@ -383,8 +384,8 @@ test("emergency stop reaches the seller; the session is closed out", async () =>
   await mine.getByLabel("Category").selectOption("compliance");
   await mine.getByLabel("What happened").fill("Seller claimed the serum cures acne");
   await mine.getByLabel(/Emergency stop/).check();
-  p.once("dialog", (d) => d.accept());
   await mine.getByRole("button", { name: "Open incident" }).click();
+  await p.getByRole("dialog", { name: "Send an emergency stop?" }).getByRole("button", { name: "Send emergency stop" }).click();
   await expect(p.getByRole("status").filter({ hasText: "Emergency stop sent" })).toBeVisible();
 
   await sellerPage.goto("/app/notifications");
@@ -546,4 +547,27 @@ test("recommended sellers come with the reason for every point", async () => {
   await expect(sarahRow).toContainText("Sells skincare");
   await expect(sarahRow).toContainText("Has the required training");
   await expect(sarahRow.getByRole("button", { name: "Invite" })).toHaveCount(0); // draft: publish before inviting
+});
+
+// ---------------------------------------------------------------- Phase 8: accessibility (WCAG 2.1 A/AA, axe-core)
+test("every role's main screens have no WCAG 2.1 A/AA violations", async ({ browser }) => {
+  const anon = await newPage(browser);
+  const pages: [Page, string[]][] = [
+    [anon, ["/", "/login", "/signup", "/forgot-password"]],
+    [brandPage, ["/app", "/app/campaigns", new URL(campaignUrl).pathname, "/app/campaigns/new", "/app/products", "/app/sellers", "/app/billing", "/app/analytics", "/app/verification", "/app/settings/team", "/app/notifications"]],
+    [sellerPage, ["/app/jobs", "/app/sessions", "/app/earnings", "/app/academy", "/app/profile"]],
+    [rosaPage, ["/app/studio", "/app/studio/live", "/app/studio/bookings", "/app/studio/locations", "/app/studio/analytics", "/app/finance/ledger"]],
+    [alexPage, ["/app/finance", "/app/finance/invoices", "/app/finance/ledger", "/app/finance/payouts", "/app/finance/disputes"]],
+    [adminPage, ["/app/admin", "/app/settings/security"]],
+  ];
+  const problems: string[] = [];
+  for (const [page, paths] of pages) {
+    for (const path of paths) {
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+      const { violations } = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      for (const v of violations) problems.push(`${path}: [${v.impact}] ${v.id}: ${v.help} (${v.nodes.length}) e.g. ${v.nodes[0]?.target.join(" ")}`);
+    }
+  }
+  expect(problems, problems.join("\n")).toEqual([]);
 });

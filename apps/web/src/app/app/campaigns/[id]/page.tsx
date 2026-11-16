@@ -1,4 +1,5 @@
 "use client";
+import { useAsk } from "@/components/ask";
 // Campaign page (blueprint B08, B12–B14, B17): lifecycle actions, studio hold, seller invitations, contracts and messages.
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
@@ -32,6 +33,7 @@ export default function CampaignPage() {
   const { id } = useParams<{ id: string }>();
   const created = useSearchParams().get("created");
   const { current } = useSession();
+  const { one } = useAsk();
   const org = current?.org_id ?? "";
   const isOwner = current?.role === "brand_owner";
   const d = useLoad(() => api<Detail>(`campaigns/${id}`, { org }), `${org}:${id}`);
@@ -53,7 +55,7 @@ export default function CampaignPage() {
             {c.status === "pending_approval" && isOwner && (
               <>
                 <Button disabled={act.busy} onClick={() => act.run(post(`campaigns/${id}/approve`), "Approved and published.")}>Approve</Button>
-                <Button variant="outline" disabled={act.busy} onClick={() => { const note = prompt("What should change?"); if (note) act.run(post(`campaigns/${id}/decline`, { note }), "Sent back to draft."); }}>Decline</Button>
+                <Button variant="outline" disabled={act.busy} onClick={async () => { const note = await one("Send back to draft", "What should change?", { multiline: true, confirmLabel: "Send back" }); if (note) act.run(post(`campaigns/${id}/decline`, { note }), "Sent back to draft."); }}>Decline</Button>
               </>
             )}
             {isOwner && !["cancelled", "completed", "archived", "in_progress"].includes(c.status) && (
@@ -135,8 +137,8 @@ export default function CampaignPage() {
                           {i.status === "countered" && (
                             <>
                               <Button size="sm" disabled={act.busy} onClick={() => act.run(post(`invitations/${i.id}/respond`, { accept: true }), "Counter accepted. The contract is ready to sign.")}>Accept counter</Button>
-                              <Button size="sm" variant="outline" disabled={act.busy} onClick={() => {
-                                const cents = toUnits(prompt("New base rate (USD)") ?? "");
+                              <Button size="sm" variant="outline" disabled={act.busy} onClick={async () => {
+                                const cents = toUnits((await one("Send new terms", "New base rate (USD)", { inputMode: "decimal", confirmLabel: "Send" })) ?? "");
                                 if (cents && !Number.isNaN(cents)) act.run(post(`invitations/${i.id}/respond`, { accept: false, baseRateCents: cents }), "New terms sent.");
                               }}>New terms</Button>
                             </>

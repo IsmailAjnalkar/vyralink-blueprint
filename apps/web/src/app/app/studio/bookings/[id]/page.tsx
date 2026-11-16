@@ -1,4 +1,5 @@
 "use client";
+import { useAsk } from "@/components/ask";
 // Studio booking page (blueprint O07–O15): producer, confirmation, booth moves, samples, check-in, readiness and the Go.
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -26,6 +27,7 @@ const SELLER_ITEMS = new Set(["checked_in", "briefing_acknowledged"]);
 export default function StudioBooking() {
   const { id } = useParams<{ id: string }>();
   const { current } = useSession();
+  const { one, confirm: confirmDialog } = useAsk();
   const org = current?.org_id ?? "";
   const role = current?.role ?? "";
   const isManager = role === "location_manager";
@@ -84,7 +86,7 @@ export default function StudioBooking() {
           )}
           <div className="flex flex-wrap gap-2">
             {isManager && bk.status === "hold" && <Button disabled={act.busy} onClick={() => act.run(post(`bookings/${id}/confirm`), "Confirmed. The campaign is scheduled and everyone was notified.")}>Confirm booking</Button>}
-            {isManager && bk.status === "confirmed" && <Button variant="destructive" disabled={act.busy} onClick={() => confirm(`Record a no-show? It counts ${bk.no_show_min} minutes after the arrival time.`) && act.run(post<{ sellerPaused: boolean }>(`bookings/${id}/no-show`), (r) => `No-show recorded.${r.sellerPaused ? " The seller is paused after two no-shows." : ""}`)}>Record no-show</Button>}
+            {isManager && bk.status === "confirmed" && <Button variant="destructive" disabled={act.busy} onClick={async () => (await confirmDialog("Record a no-show?", `It counts ${bk.no_show_min} minutes after the arrival time. Two no-shows pause the seller.`, "Record no-show", true)) && act.run(post<{ sellerPaused: boolean }>(`bookings/${id}/no-show`), (r) => `No-show recorded.${r.sellerPaused ? " The seller is paused after two no-shows." : ""}`)}>Record no-show</Button>}
           </div>
         </CardContent>
       </Card>
@@ -113,7 +115,7 @@ export default function StudioBooking() {
                   {floor && !SELLER_ITEMS.has(r.item) && ["confirmed", "checked_in"].includes(bk.status) && (
                     <>
                       <Button size="sm" variant="outline" aria-label={`Pass: ${LABEL[r.item]}`} disabled={act.busy} onClick={() => act.run(post(`bookings/${id}/readiness/${r.item}`, { result: "pass" }))}>Pass</Button>
-                      <Button size="sm" variant="ghost" aria-label={`Fail: ${LABEL[r.item]}`} disabled={act.busy} onClick={() => { const note = prompt("What failed?"); if (note) act.run(post(`bookings/${id}/readiness/${r.item}`, { result: "fail", note }), "Marked failed; the location manager was notified."); }}>Fail</Button>
+                      <Button size="sm" variant="ghost" aria-label={`Fail: ${LABEL[r.item]}`} disabled={act.busy} onClick={async () => { const note = await one(`Failed: ${LABEL[r.item]}`, "What failed?", { confirmLabel: "Mark failed", destructive: true }); if (note) act.run(post(`bookings/${id}/readiness/${r.item}`, { result: "fail", note }), "Marked failed; the location manager was notified."); }}>Fail</Button>
                     </>
                   )}
                 </li>
@@ -122,7 +124,7 @@ export default function StudioBooking() {
             {floor && bk.status === "checked_in" && !bk.go_at && (
               notPassed.length === 0
                 ? <Button className="w-fit" disabled={act.busy} onClick={() => act.run(post(`bookings/${id}/go`), "Go given. The seller was told to start the LIVE in the TikTok app when cued.")}>Give the Go</Button>
-                : isManager && <Button variant="outline" className="w-fit" disabled={act.busy} onClick={() => { const overrideReason = prompt(`Not passed: ${notPassed.map((r) => LABEL[r.item]).join(", ")}. Reason to go anyway?`); if (overrideReason) act.run(post(`bookings/${id}/go`, { overrideReason }), "Go given with override (audited)."); }}>Override and give the Go</Button>
+                : isManager && <Button variant="outline" className="w-fit" disabled={act.busy} onClick={async () => { const overrideReason = await one("Give the Go with an override", "Reason to go anyway (audited)", { description: `Not passed: ${notPassed.map((r) => LABEL[r.item]).join(", ")}.`, multiline: true, confirmLabel: "Give the Go", destructive: true }); if (overrideReason) act.run(post(`bookings/${id}/go`, { overrideReason }), "Go given with override (audited)."); }}>Override and give the Go</Button>
             )}
             {bk.go_at && <p className="text-sm">Go given {when(bk.go_at)}. The LIVE itself is started and ended in TikTok on the studio device.</p>}
           </CardContent>

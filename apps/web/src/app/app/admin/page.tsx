@@ -1,4 +1,5 @@
 "use client";
+import { useAsk } from "@/components/ask";
 // Platform review queue (blueprint A02–A04): brand verification, product compliance, seller provider checks (sandbox).
 // Support admins can read; only a super admin (with two-step verification) decides.
 import { Fragment, useState } from "react";
@@ -18,6 +19,7 @@ type User = { id: string; name: string; email: string; locked: boolean; membersh
 
 export default function AdminPage() {
   const { me } = useSession();
+  const { one } = useAsk();
   const ver = useLoad(() => api<Verification[]>("admin/verifications?status=submitted"), "ver");
   const prods = useLoad(() => api<Product[]>("admin/products"), "prods");
   const users = useLoad(() => api<User[]>("admin/users"), "users");
@@ -28,8 +30,8 @@ export default function AdminPage() {
   const [q, setQ] = useState("");
   const canDecide = me.user.is_super_admin;
   const post = (path: string, body: unknown) => () => api(path, { body });
-  const decide = (path: string, decision: string, okMsg: string) => {
-    const note = decision === "approve" ? undefined : prompt("Explain what needs to change (shared with the brand)") ?? "";
+  const decide = async (path: string, decision: string, okMsg: string) => {
+    const note = decision === "approve" ? undefined : (await one("Explain the decision", "What needs to change (shared with the brand)", { multiline: true })) ?? "";
     if (note === "") return;
     act.run(post(path, { decision, ...(note ? { note } : {}) }), okMsg);
   };

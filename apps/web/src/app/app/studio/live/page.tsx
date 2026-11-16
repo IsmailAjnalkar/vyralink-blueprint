@@ -1,4 +1,5 @@
 "use client";
+import { useAsk } from "@/components/ask";
 // LIVE control center (blueprint O16–O20): today's sessions pushed in real time (server-sent events), most urgent first.
 // Every figure shows its source. Vyralink does not control TikTok: start/end happen in the TikTok app on the studio device.
 import Link from "next/link";
@@ -68,6 +69,7 @@ export default function ControlCenter() {
 
 function SessionCard({ s, org, act }: { s: Session; org: string; act: ReturnType<typeof useAction> }) {
   const [panel, setPanel] = useState<"" | "metric" | "incident" | "close">("");
+  const { ask, confirm: confirmDialog } = useAsk();
   const post = (path: string, body: unknown = {}) => () => api(`bookings/${s.id}/${path}`, { org, body });
   const high = s.open_incidents.some((i) => i.severity === "high");
   const running = s.status === "in_progress";
@@ -80,11 +82,11 @@ function SessionCard({ s, org, act }: { s: Session; org: string; act: ReturnType
     if (gmvCents == null || Number.isNaN(gmvCents) || !Number.isInteger(orders) || orders < 0) return act.run(() => Promise.reject(new ApiError(400, "Enter orders as a whole number and GMV like 2560.00, as shown in TikTok Shop.")));
     act.run(post("metrics", { orders, gmvCents, asOf: new Date().toISOString() }), "Recorded (Manual).").then((r) => r && setPanel(""));
   }
-  function incident(e: React.SubmitEvent<HTMLFormElement>) {
+  async function incident(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const emergencyStop = f.get("stop") === "on";
-    if (emergencyStop && !confirm("Emergency stop: the producer tells the seller to end the LIVE in the TikTok app now. Continue?")) return;
+    if (emergencyStop && !(await confirmDialog("Send an emergency stop?", "The seller, brand and location manager are told to end the LIVE in the TikTok app now.", "Send emergency stop", true))) return;
     act.run(post("incidents", { category: String(f.get("category")), severity: emergencyStop ? "high" : String(f.get("severity")), description: String(f.get("description")).trim(), emergencyStop }),
       emergencyStop ? "Emergency stop sent: the seller, brand and location manager were notified. End the LIVE in TikTok now." : "Incident opened.").then((r) => r && setPanel(""));
   }
@@ -116,10 +118,11 @@ function SessionCard({ s, org, act }: { s: Session; org: string; act: ReturnType
             {s.open_incidents.map((i) => (
               <li key={i.id} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
                 <Badge variant={i.severity === "high" ? "destructive" : "outline"}>{i.severity}</Badge><span className="flex-1">{i.description}</span><Status value={i.status} />
-                <Button size="sm" variant="outline" disabled={act.busy} onClick={() => {
-                  const resolution = prompt("How was it resolved?");
-                  if (!resolution) return;
-                  const minutesLost = Number(prompt("Minutes of LIVE lost (0 if none)", "0") ?? 0);
+                <Button size="sm" variant="outline" disabled={act.busy} onClick={async () => {
+                  const v = await ask({ title: "Resolve incident", description: i.description, confirmLabel: "Resolve", fields: [{ name: "resolution", label: "How was it resolved?", multiline: true }, { name: "minutes", label: "Minutes of LIVE lost (0 if none)", defaultValue: "0", inputMode: "numeric" }] });
+                  if (!v) return;
+                  const resolution = v.resolution;
+                  const minutesLost = Number(v.minutes);
                   act.run(() => api(`incidents/${i.id}`, { method: "PATCH", org, body: { status: "resolved", resolution, minutesLost: Number.isInteger(minutesLost) && minutesLost >= 0 ? minutesLost : 0 } }), "Incident resolved.");
                 }}>Resolve</Button>
               </li>

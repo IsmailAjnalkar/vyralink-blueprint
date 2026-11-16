@@ -1,4 +1,5 @@
 "use client";
+import { useAsk } from "@/components/ask";
 // Seller job marketplace and invitations (blueprint C09–C12): browse, apply, accept, decline, counter, then sign.
 import Link from "next/link";
 import { useState } from "react";
@@ -20,6 +21,7 @@ type Contracted = { status: string; contract?: { id: string } };
 
 export default function JobsPage() {
   const jobs = useLoad(() => api<Job[]>("jobs"), "jobs");
+  const { one } = useAsk();
   const invites = useLoad(() => api<Invitation[]>("seller/invitations"), "invites");
   const act = useAction(() => Promise.all([jobs.reload(), invites.reload()]));
   const [contract, setContract] = useState<string | null>(null);
@@ -55,12 +57,12 @@ export default function JobsPage() {
                 {i.kind === "invite" && ["invited", "viewed"].includes(i.status) && (
                   <>
                     <Button size="sm" disabled={act.busy} onClick={() => accept(i)}>Accept</Button>
-                    <Button size="sm" variant="outline" disabled={act.busy} onClick={() => {
-                      const cents = toUnits(prompt("Your base rate (USD)") ?? "");
+                    <Button size="sm" variant="outline" disabled={act.busy} onClick={async () => {
+                      const cents = toUnits((await one(`Counter-offer: ${i.campaign}`, "Your base rate (USD)", { inputMode: "decimal", confirmLabel: "Send counter-offer" })) ?? "");
                       if (cents && !Number.isNaN(cents)) act.run(post(`invitations/${i.id}/counter`, { baseRateCents: cents }), "Counter-offer sent.");
                     }}>Counter</Button>
-                    <Button size="sm" variant="ghost" disabled={act.busy} onClick={() => {
-                      const reason = prompt("Why are you declining? (shared with the brand)");
+                    <Button size="sm" variant="ghost" disabled={act.busy} onClick={async () => {
+                      const reason = await one(`Decline ${i.campaign}`, "Why are you declining? (shared with the brand)", { multiline: true, confirmLabel: "Decline", destructive: true });
                       if (reason) act.run(post(`invitations/${i.id}/decline`, { reason }), "Declined.");
                     }}>Decline</Button>
                   </>

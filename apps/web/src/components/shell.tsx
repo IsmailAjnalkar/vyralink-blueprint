@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, type ReactNode } from "react";
+import { AskProvider } from "@/components/ask";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
@@ -36,6 +37,7 @@ export function Shell({ me, current, nav, children }: { me: Me; current: Members
 
   return (
     <SessionContext.Provider value={{ me, current }}>
+    <AskProvider>
     <div className="flex min-h-svh flex-col">
       <header className="flex flex-wrap items-center gap-3 border-b px-4 py-2">
         <Link href="/app" className="mr-2 text-sm font-extrabold tracking-[0.2em]">VYRALINK</Link>
@@ -76,6 +78,7 @@ export function Shell({ me, current, nav, children }: { me: Me; current: Members
         <main className="min-w-0 flex-1 p-6">{children}</main>
       </div>
     </div>
+    </AskProvider>
     </SessionContext.Provider>
   );
 }

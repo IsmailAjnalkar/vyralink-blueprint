@@ -1,4 +1,5 @@
 "use client";
+import { useAsk } from "@/components/ask";
 // Creator Hub invoices (blueprint F02): production, performance and cancellation fees, credit notes.
 // "Mark paid" stands in for the payment provider's webhook until Stripe is connected (sandbox, audited).
 import { useState } from "react";
@@ -13,16 +14,18 @@ import { useAction, useLoad } from "@/lib/use-load";
 
 export default function FinanceInvoices() {
   const { current } = useSession();
+  const { ask, one } = useAsk();
   const org = current?.org_id ?? "";
   const [status, setStatus] = useState("");
   const list = useLoad(() => api<Invoice[]>(`invoices${status ? `?status=${status}` : ""}`, { org }), `${org}:${status}`);
   const act = useAction(list.reload);
   const post = (path: string, body: unknown = {}) => () => api(path, { org, body });
 
-  function credit(i: Invoice) {
-    const cents = toUnits(prompt(`Credit amount (USD), at most ${usd(i.amount_cents)}`) ?? "");
-    if (!cents || Number.isNaN(cents)) return;
-    const reason = prompt("Reason (shown on the credit note)");
+  async function credit(i: Invoice) {
+    const v = await ask({ title: `Credit note against ${i.number}`, confirmLabel: "Issue credit note", fields: [{ name: "amount", label: `Amount (USD), at most ${usd(i.amount_cents)}`, inputMode: "decimal" }, { name: "reason", label: "Reason (shown on the credit note)", multiline: true }] });
+    const cents = toUnits(v?.amount ?? "");
+    if (!v || !cents || Number.isNaN(cents)) return;
+    const reason = v.reason;
     if (reason) act.run(post(`invoices/${i.id}/credit-note`, { amountCents: cents, reason }), `Credit note for ${usd(cents)} issued.`);
   }
 
@@ -54,7 +57,7 @@ export default function FinanceInvoices() {
                     {["issued", "overdue"].includes(i.status) && i.kind !== "credit_note" && (
                       <>
                         <Button size="sm" variant="outline" disabled={act.busy} onClick={() => act.run(post(`invoices/${i.id}/paid`), `${i.number} marked paid (sandbox).`)}>Mark paid (sandbox)</Button>
-                        <Button size="sm" variant="ghost" disabled={act.busy} onClick={() => { const reason = prompt("Why did the payment fail?"); if (reason) act.run(post(`invoices/${i.id}/payment-failed`, { reason }), "Brand billing contacts were notified."); }}>Payment failed</Button>
+                        <Button size="sm" variant="ghost" disabled={act.busy} onClick={async () => { const reason = await one(`Payment failed: ${i.number}`, "Why did the payment fail?", { confirmLabel: "Notify the brand" }); if (reason) act.run(post(`invoices/${i.id}/payment-failed`, { reason }), "Brand billing contacts were notified."); }}>Payment failed</Button>
                       </>
                     )}
                     {["issued", "overdue", "paid"].includes(i.status) && i.kind !== "credit_note" && <Button size="sm" variant="ghost" disabled={act.busy} onClick={() => credit(i)}>Credit note</Button>}
