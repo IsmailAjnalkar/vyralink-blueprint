@@ -1,8 +1,10 @@
 // Reconciliation, invoices, seller ledger, payout runs, disputes, reports (blueprint F01–F05, B15, B16, C20–C22, A07, A08, BF16–BF19).
 // No escrow: brand charges and seller payouts are separate payment-provider flows; GMV is never revenue.
 // Every finance record is scoped to the Creator Hub organization that ran the booking.
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { decimal, toCsv } from '../csv.js';
 import { setting, tx } from '../db.js';
-import { audit, bad, body, conflict, member, notify, notFound, one, orgUsers, requireMfa, superAdmin, user, BRAND, BRAND_BILLING } from '../http.js';
+import { audit, bad, body, conflict, member, notify, notFound, one, orgUsers, requireMfa, superAdmin, user, BRAND, BRAND_BILLING, HttpError } from '../http.js';
 import { loadSettlement, lockResults } from '../settle.js';
 import { assertMove } from '../status.js';
 
@@ -97,7 +99,9 @@ export default async function finance(app) {
 
   // ---------------------------------------------------------------- seller ledger
   app.get('/ledger', async (req) => {
-    const m = member(req, FIN);
+    // Location managers are second approvers: they see only the adjustments waiting for approval.
+    const m = member(req, [...FIN, 'location_manager']);
+    if (m.role === 'location_manager') req.query.status = 'pending_approval';
     return (await pool.query(`SELECT e.*, sp.display_name AS seller FROM ledger_entries e JOIN seller_profiles sp ON sp.user_id = e.seller_id
       WHERE ${OWNS('e.booking_id', '$1')} AND ($2::uuid IS NULL OR e.seller_id = $2) AND ($3::text IS NULL OR e.status = $3) ORDER BY e.created_at DESC`, [m.orgId, req.query.sellerId ?? null, req.query.status ?? null])).rows;
   });
@@ -349,6 +353,104 @@ export default async function finance(app) {
       await audit(db, req, 'dispute.decided', 'dispute', d.id, req.body);
       await notify(db, [d.opened_by, d.seller_id, ...(d.brand_org ? await orgUsers(db, d.brand_org, ['brand_owner']) : [])], 'dispute', `Dispute decided: ${req.body.decision}`);
       return { status: 'decided', outcomeCents: out };
+    });
+  });
+
+  app.get('/payout-runs', async (req) => {
+    const m = member(req, FIN);
+    return (await pool.query(`SELECT r.*, (SELECT count(*) FROM payouts p WHERE p.run_id = r.id)::int AS payouts,
+        (SELECT count(*) FROM payouts p WHERE p.run_id = r.id AND p.status = 'failed')::int AS failed FROM payout_runs r WHERE r.org_id = $1 ORDER BY r.created_at DESC`, [m.orgId])).rows;
+  });
+
+  app.get('/payout-runs/:id', async (req) => {
+    const run = await finRun(pool, req, req.params.id);
+    const { rows: payouts } = await pool.query('SELECT p.*, sp.display_name AS seller FROM payouts p JOIN seller_profiles sp ON sp.user_id = p.seller_id WHERE p.run_id = $1 ORDER BY sp.display_name', [run.id]);
+    return { ...run, payouts };
+  });
+
+  // ---------------------------------------------------------------- CSV exports (accounting)
+  const EXPORTS = {
+    invoices: {
+      roles: [...BRAND_BILLING, ...FIN],
+      cols: ['number', 'brand', 'campaign', 'kind', 'basis', 'amount', 'currency', 'status', 'issued_at', 'due_at', 'paid_at'],
+      query: (m) => [`SELECT i.*, o.name AS brand, c.name AS campaign FROM invoices i JOIN orgs o ON o.id = i.org_id LEFT JOIN campaigns c ON c.id = i.campaign_id
+        WHERE ${m.kind === 'brand' ? 'i.org_id = $1' : OWNS('i.booking_id', '$1')} ORDER BY i.created_at`, [m.orgId]],
+    },
+    ledger: {
+      roles: FIN,
+      cols: ['created_at', 'seller', 'campaign', 'kind', 'basis', 'amount', 'currency', 'status', 'reason'],
+      query: (m) => [`SELECT e.*, sp.display_name AS seller, c.name AS campaign FROM ledger_entries e JOIN seller_profiles sp ON sp.user_id = e.seller_id
+        LEFT JOIN bookings b ON b.id = e.booking_id LEFT JOIN campaigns c ON c.id = b.campaign_id WHERE ${OWNS('e.booking_id', '$1')} ORDER BY e.created_at`, [m.orgId]],
+    },
+    payouts: {
+      roles: FIN,
+      cols: ['run_id', 'seller', 'amount', 'currency', 'status', 'failure_reason', 'attempts', 'idempotency_key', 'executed_at'],
+      query: (m) => [`SELECT p.*, sp.display_name AS seller, r.executed_at FROM payouts p JOIN payout_runs r ON r.id = p.run_id JOIN seller_profiles sp ON sp.user_id = p.seller_id
+        WHERE r.org_id = $1 ORDER BY r.created_at, sp.display_name`, [m.orgId]],
+    },
+  };
+  app.get('/exports/:kind', async (req, reply) => {
+    const ex = EXPORTS[req.params.kind];
+    if (!ex) throw notFound('Unknown export');
+    const m = member(req, ex.roles);
+    const { rows } = await pool.query(...ex.query(m));
+    await audit(pool, req, 'export.downloaded', 'export', req.params.kind, { rows: rows.length });
+    reply.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="${req.params.kind}-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return toCsv(rows.map((r) => ({ ...r, amount: decimal(r.amount_cents) })), ex.cols);
+  });
+
+  // ---------------------------------------------------------------- payment provider webhooks
+  // Stripe-compatible signing (header "Stripe-Signature: t=…,v1=HMAC-SHA256(secret, `${t}.${rawBody}`)", 5-minute tolerance).
+  // Event ids are stored first, so a retried delivery is acknowledged without being applied twice.
+  // Not yet exercised against Stripe itself: no account is connected (see docs/DEPLOYMENT.md).
+  app.register(async (hooks) => {
+    hooks.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, raw, done) => done(null, raw));
+    hooks.post('/webhooks/payments', async (req) => {
+      const secret = process.env.PAYMENTS_WEBHOOK_SECRET;
+      if (!secret) throw new HttpError(503, 'Payment webhooks are not configured', 'not_configured');
+      const header = String(req.headers['stripe-signature'] ?? '');
+      const t = Number(/(?:^|,)t=(\d+)/.exec(header)?.[1]);
+      const expected = Buffer.from(createHmac('sha256', secret).update(`${t}.${req.body}`).digest('hex'));
+      const valid = header.split(',').filter((p) => p.startsWith('v1=')).some((p) => { const got = Buffer.from(p.slice(3)); return got.length === expected.length && timingSafeEqual(got, expected); });
+      if (!t || Math.abs(Date.now() / 1000 - t) > 300 || !valid) throw new HttpError(400, 'Invalid webhook signature', 'bad_signature');
+      let event;
+      try { event = JSON.parse(req.body); } catch { throw bad('Malformed event'); }
+      if (typeof event?.id !== 'string' || typeof event.type !== 'string') throw bad('Malformed event');
+
+      return tx(pool, async (db) => {
+        const { rows: fresh } = await db.query('INSERT INTO webhook_events (id, provider, type, payload) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING RETURNING id', [event.id, 'payments', event.type, event]);
+        if (!fresh.length) return { received: true, duplicate: true };
+        const obj = event.data?.object ?? {};
+        const outcome = async (o) => { await db.query('UPDATE webhook_events SET outcome = $2 WHERE id = $1', [event.id, o]); await audit(db, req, `webhook.${event.type}`, 'webhook_event', event.id, { outcome: o }); return { received: true, outcome: o }; };
+
+        if (event.type === 'payment_intent.succeeded' || event.type === 'payment_intent.payment_failed') {
+          const { rows: [inv] } = await db.query('SELECT * FROM invoices WHERE id::text = $1 FOR UPDATE', [String(obj.metadata?.invoice_id ?? '')]);
+          if (!inv) return outcome('unknown_invoice');
+          if (event.type === 'payment_intent.payment_failed') {
+            await notify(db, await orgUsers(db, inv.org_id, BRAND_BILLING), 'billing', `Payment for ${inv.number} failed. Update your payment method; we’ll retry.`);
+            return outcome('payment_failed_notified');
+          }
+          // The amount and currency charged must match the invoice exactly, or nothing is marked paid.
+          if (obj.amount_received !== inv.amount_cents || String(obj.currency).toUpperCase() !== inv.currency) return outcome('amount_mismatch');
+          if (!['issued', 'overdue'].includes(inv.status)) return outcome(`ignored_${inv.status}`);
+          await db.query(`UPDATE invoices SET status = 'paid', paid_at = now() WHERE id = $1`, [inv.id]);
+          return outcome('invoice_paid');
+        }
+        if (event.type === 'transfer.paid' || event.type === 'transfer.failed') {
+          const { rows: [p] } = await db.query('SELECT * FROM payouts WHERE id::text = $1 FOR UPDATE', [String(obj.metadata?.payout_id ?? '')]);
+          if (!p) return outcome('unknown_payout');
+          if (obj.amount !== p.amount_cents) return outcome('amount_mismatch');
+          if (event.type === 'transfer.failed') {
+            await db.query(`UPDATE payouts SET status = 'failed', failure_reason = $2 WHERE id = $1 AND status <> 'paid'`, [p.id, String(obj.failure_message ?? 'Rejected by the bank')]);
+            await notify(db, [p.seller_id], 'payout', 'Your payout failed. Update your payout account and we’ll retry.');
+            return outcome('payout_failed');
+          }
+          await db.query(`UPDATE payouts SET status = 'paid', failure_reason = NULL WHERE id = $1`, [p.id]);
+          await db.query(`UPDATE ledger_entries SET status = 'paid' WHERE payout_id = $1`, [p.id]);
+          return outcome('payout_paid');
+        }
+        return outcome('ignored');
+      });
     });
   });
 

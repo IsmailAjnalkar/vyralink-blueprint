@@ -22,7 +22,8 @@ export default function AdminPage() {
   const prods = useLoad(() => api<Product[]>("admin/products"), "prods");
   const users = useLoad(() => api<User[]>("admin/users"), "users");
   const orgs = useLoad(() => api<Org[]>("admin/orgs"), "orgs");
-  const act = useAction(() => Promise.all([ver.reload(), prods.reload(), orgs.reload()]));
+  const settings = useLoad(() => api<Record<string, unknown>>("admin/settings"), "settings");
+  const act = useAction(() => Promise.all([ver.reload(), prods.reload(), orgs.reload(), settings.reload()]));
   const [q, setQ] = useState("");
   const canDecide = me.user.is_super_admin;
   const post = (path: string, body: unknown) => () => api(path, { body });
@@ -43,6 +44,7 @@ export default function AdminPage() {
           <TabsTrigger value="prod">Products ({prods.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="sellers">Seller checks</TabsTrigger>
           <TabsTrigger value="orgs">Organizations</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="ver" className="grid gap-3">
@@ -142,6 +144,25 @@ export default function AdminPage() {
               <TableBody>{orgs.data?.map((o) => <TableRow key={o.id}><TableCell className="font-medium">{o.name}</TableCell><TableCell>{o.kind === "operator" ? "Creator Hub" : "Brand"}</TableCell><TableCell><Status value={o.status} /></TableCell><TableCell>{o.members}</TableCell></TableRow>)}</TableBody>
             </Table>
           </div>
+        </TabsContent>
+
+        <TabsContent value="settings" className="grid gap-3">
+          <p className="text-sm text-muted-foreground">Platform rules. Money in cents, rates in basis points (100 = 1%). Changes are audited and apply to new records.</p>
+          <ul className="grid gap-2">
+            {Object.entries(settings.data ?? {}).map(([k, v]) => (
+              <li key={k}>
+                <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => {
+                  e.preventDefault();
+                  const raw = String(new FormData(e.currentTarget).get("value")).trim();
+                  const value = /^-?d+$/.test(raw) ? Number(raw) : raw;
+                  act.run(() => api(`admin/settings/${k}`, { method: "PUT", body: { value } }), `${k} = ${raw}`);
+                }}>
+                  <label className="grid gap-1 text-sm"><span className="font-mono">{k}</span><input name="value" aria-label={k} defaultValue={String(v)} disabled={!canDecide} className="h-9 w-48 rounded-md border bg-background px-2" /></label>
+                  {canDecide && <Button type="submit" size="sm" variant="outline" disabled={act.busy}>Save</Button>}
+                </form>
+              </li>
+            ))}
+          </ul>
         </TabsContent>
       </Tabs>
     </div>

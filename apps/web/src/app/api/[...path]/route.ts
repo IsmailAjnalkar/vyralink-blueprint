@@ -9,7 +9,7 @@ import { API_URL, COOKIE_SECURE, ORG_COOKIE, SESSION_COOKIE, SESSION_MAX_AGE } f
 const TOKEN_ROUTES = new Set(["auth/login", "auth/verify-email", "auth/mfa/verify"]);
 const LOGOUT_ROUTES = new Set(["auth/logout", "auth/logout-all"]);
 const FORWARD_REQUEST = ["content-type", "user-agent", "accept"];
-const FORWARD_RESPONSE = ["content-type", "cache-control", "retry-after"];
+const FORWARD_RESPONSE = ["content-type", "cache-control", "retry-after", "content-disposition"];
 
 /**
  * The caller's real address. The Next.js server appends the connecting peer to X-Forwarded-For, so entries are

@@ -5,6 +5,7 @@
 //   producer assigned → confirmed → samples shipped and received → booth move → seller sees code + briefing → check-in →
 //   readiness → Go. Overlap is refused; a fresh hold is rescheduled.
 // Only the platform admin's MFA enrolment uses the API directly (the code is computed here; the UI login uses it).
+import { readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { COURSES } from "../apps/api/src/academy.js";
 import { call, closeDb, emailToken, freshCode, localInput, signInUi, signUpUi } from "./helpers";
@@ -17,8 +18,9 @@ const sarah = { email: "sarah@sellers.test", name: "Sarah Johnson" };
 const rosa = { email: "rosa@creatorhub.test", name: "Rosa Diaz" };
 const jordan = { email: "jordan@creatorhub.test", name: "Jordan Park" };
 const sam = { email: "sam@creatorhub.test", name: "Sam Kim" };
+const alex = { email: "alex@creatorhub.test", name: "Alex Morgan" };
 let adminSecret = "";
-let brandPage: Page, sellerPage: Page, adminPage: Page, rosaPage: Page, jordanPage: Page, samPage: Page;
+let brandPage: Page, sellerPage: Page, adminPage: Page, rosaPage: Page, jordanPage: Page, samPage: Page, alexPage: Page;
 let campaignUrl = "";
 // Soon enough that check-in is open (it opens 60 min before arrival = start − 45 min).
 const start = new Date(Date.now() + 50 * 60000);
@@ -32,12 +34,19 @@ test.beforeAll(async ({ browser }) => {
   const { token } = await call<{ token: string }>("POST", "/auth/login", { body: { email: ADMIN.email, password: ADMIN.password } });
   adminSecret = (await call<{ secret: string }>("POST", "/auth/mfa/setup", { token })).secret;
   await call("POST", "/auth/mfa/enable", { token, body: { code: await freshCode(adminSecret) } });
-  [brandPage, sellerPage, adminPage, rosaPage, jordanPage, samPage] = await Promise.all(Array.from({ length: 6 }, () => newPage(browser)));
+  [brandPage, sellerPage, adminPage, rosaPage, jordanPage, samPage, alexPage] = await Promise.all(Array.from({ length: 7 }, () => newPage(browser)));
   await signInUi(adminPage, ADMIN.email, ADMIN.password, adminSecret);
 });
 test.afterAll(closeDb);
 
 test("Creator Hub is set up through the UI", async () => {
+  // Test configuration: a zero-day returns window so results can be locked within the run (default is 30 days).
+  await adminPage.goto("/app/admin");
+  await adminPage.getByRole("tab", { name: "Settings" }).click();
+  await adminPage.getByLabel("returns_window_days").fill("0");
+  await adminPage.locator("form", { has: adminPage.getByLabel("returns_window_days") }).getByRole("button", { name: "Save" }).click();
+  await expect(adminPage.getByRole("status")).toContainText("returns_window_days = 0");
+
   await signUpUi(rosaPage, { kind: "Creator Hub staff", name: rosa.name, email: rosa.email, password: PASSWORD });
   await adminPage.goto("/app/admin");
   await adminPage.getByRole("tab", { name: "Organizations" }).click();
@@ -60,7 +69,7 @@ test("Creator Hub is set up through the UI", async () => {
   }
 
   // Studio staff join by invitation.
-  for (const [who, role, p] of [[jordan, "Studio Producer", jordanPage], [sam, "Inventory Coordinator", samPage]] as const) {
+  for (const [who, role, p] of [[jordan, "Studio Producer", jordanPage], [sam, "Inventory Coordinator", samPage], [alex, "Finance Administrator", alexPage]] as const) {
     await page.goto("/app/settings/team");
     await page.getByLabel("Email").fill(who.email);
     await page.getByLabel("Role", { exact: true }).selectOption({ label: role });
@@ -73,6 +82,16 @@ test("Creator Hub is set up through the UI", async () => {
     await expect(p).toHaveURL(/\/app$/);
     await expect(p.getByText(`Creator Hub · ${role}`).first()).toBeVisible();
   }
+
+  // Finance screens stay locked until two-step verification is on.
+  await alexPage.goto("/app/finance");
+  await expect(alexPage.locator("[data-slot=alert]").first()).toContainText(/two-step/i);
+  await alexPage.goto("/app/settings/security");
+  await alexPage.getByRole("button", { name: "Set up two-step verification" }).click();
+  const secret = (await alexPage.getByLabel("Setup key").textContent())!.trim();
+  await alexPage.getByLabel("Enter the 6-digit code it shows").fill(await freshCode(secret));
+  await alexPage.getByRole("button", { name: "Turn on" }).click();
+  await expect(alexPage.getByText("Signing in asks for a code")).toBeVisible();
 });
 
 test("brand signs up and gets verified", async () => {
@@ -387,4 +406,83 @@ test("TikTok Shop results and refunds are imported; brand sees the same figures"
   await expect(brandResults.getByRole("row", { name: /Eligible sales/ })).toContainText("$280.00");
   await expect(brandResults.getByRole("row", { name: /Performance fee/ })).toContainText("$19.60"); // 7% × $280
   await expect(brandResults.getByRole("button", { name: "Import orders" })).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------- Phase 5: finance
+test("finance locks the results; the brand is invoiced production and performance fees", async () => {
+  const f = alexPage;
+  await f.goto("/app/finance");
+  await f.getByRole("row", { name: /Vitamin C LIVE — GlowSkin/ }).getByRole("button", { name: "Lock results" }).click();
+  await expect(f.getByRole("status")).toContainText("results locked");
+
+  await brandPage.goto("/app/billing");
+  await expect(brandPage.getByRole("row", { name: /production/ })).toContainText("$750.00");
+  await expect(brandPage.getByRole("row", { name: /performance/ })).toContainText("$19.60"); // 7% × $280 eligible
+  await expect(brandPage.getByRole("row", { name: /performance/ })).toContainText("USD");
+});
+
+test("brand disputes the performance invoice; the platform admin credits part of it", async () => {
+  const b = brandPage;
+  const row = b.getByRole("row", { name: /performance/ });
+  await row.getByRole("button", { name: "Dispute" }).click();
+  await row.getByLabel("Disputed amount (USD)").fill("19.60");
+  await row.getByLabel("What happened").fill("Two orders were placed after the LIVE ended");
+  await row.getByRole("button", { name: "Open dispute" }).click();
+  await expect(b).toHaveURL(/\/app\/disputes\//);
+  const disputeUrl = b.url();
+
+  await adminPage.goto("/app/finance/disputes");
+  await adminPage.getByRole("link", { name: "Two orders were placed after the LIVE ended" }).click();
+  await adminPage.getByLabel("Decision (both sides see it)").fill("One order was outside the LIVE window");
+  await adminPage.getByLabel("Credit to the brand (USD)").fill("5.00");
+  await adminPage.getByRole("button", { name: "Decide" }).click();
+  await expect(adminPage.getByRole("status")).toContainText("Decided");
+
+  await b.goto(disputeUrl);
+  await expect(b.getByText("One order was outside the LIVE window")).toBeVisible();
+  await b.goto("/app/billing");
+  await expect(b.getByRole("row", { name: /credit note/ })).toContainText("-$5.00");
+});
+
+test("invoice paid (sandbox); payout run approved and sent; the seller sees the payout", async () => {
+  const f = alexPage;
+  await f.goto("/app/finance/invoices");
+  await f.getByRole("row", { name: /production/ }).getByRole("button", { name: "Mark paid (sandbox)" }).click();
+  await expect(f.getByRole("row", { name: /production/ })).toContainText("paid");
+
+  await f.goto("/app/finance/payouts");
+  await expect(f.getByText(/Sandbox: no payment provider is connected/)).toBeVisible();
+  await f.getByRole("button", { name: "Build a payout run" }).click();
+  await expect(f.getByRole("status")).toContainText("Run created for $28.00"); // commission 10% × $280; no bonus; LIVE under a minute
+  await f.getByRole("button", { name: "Approve" }).click();
+  await expect(f.getByRole("status")).toContainText("Approved");
+  await f.getByRole("button", { name: "Send (sandbox)" }).click();
+  await expect(f.getByRole("status")).toContainText("1 paid, 0 failed");
+  await f.getByRole("button", { name: "Build a payout run" }).click();
+  await expect(f.getByRole("status")).toContainText("Nothing to pay"); // no line is paid twice
+
+  await sellerPage.goto("/app/earnings");
+  await expect(card(sellerPage, "Paid")).toContainText("$28.00");
+  await expect(sellerPage.locator("section", { hasText: "Payouts" })).toContainText("paid");
+});
+
+test("large adjustments need a second person; accounting exports download as CSV", async () => {
+  const f = alexPage;
+  await f.goto("/app/finance/ledger");
+  await f.getByLabel("Amount (USD)").fill("150.00");
+  await f.getByLabel("Reason (seller sees it)").fill("Goodwill for the early end");
+  await f.getByRole("button", { name: "Add" }).click();
+  await expect(f.getByRole("status")).toContainText("a second person must approve");
+  await expect(f.getByRole("row", { name: /Goodwill for the early end/ })).toContainText("Needs someone else");
+
+  await rosaPage.goto("/app/finance/ledger");
+  await rosaPage.getByRole("row", { name: /Goodwill for the early end/ }).getByRole("button", { name: "Approve" }).click();
+  await expect(rosaPage.getByRole("status")).toContainText("Approved and locked");
+
+  await f.reload();
+  const [download] = await Promise.all([f.waitForEvent("download"), f.getByRole("link", { name: "Export ledger (CSV)" }).click()]);
+  expect(download.suggestedFilename()).toMatch(/^ledger-\d{4}-\d{2}-\d{2}\.csv$/);
+  const text = readFileSync(await download.path(), "utf8");
+  expect(text).toContain("Goodwill for the early end");
+  expect(text).toContain("150.00,USD,locked");
 });

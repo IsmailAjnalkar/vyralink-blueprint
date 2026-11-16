@@ -1,6 +1,7 @@
 "use client";
 // Seller's booked sessions (blueprint C13–C16): where and when to arrive, the check-in code, the briefing.
 import { Empty, Messages, PageHeader, Status, when } from "@/components/bits";
+import { OpenDispute } from "@/components/open-dispute";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
@@ -55,6 +56,7 @@ export default function SessionsPage() {
               {upcoming && s.status !== "hold" && (s.briefing === "pass"
                 ? <p>✓ Briefing read</p>
                 : <Button size="sm" className="w-fit" disabled={act.busy || !s.briefing} onClick={() => act.run(() => api(`bookings/${s.id}/briefing/acknowledge`, { body: {} }), "Thanks. The producer can see you read the briefing.")}>I’ve read the briefing</Button>)}
+              {s.status === "completed" && <OpenDispute target={{ bookingId: s.id }} types={["commission", "attribution"]} label="Dispute my pay for this session" />}
               <p className="text-xs text-muted-foreground">The LIVE runs in the TikTok app on the studio device. The producer tells you when to go LIVE and when to end.</p>
             </CardContent>
           </Card>

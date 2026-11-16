@@ -2,6 +2,7 @@
 // Needs the dev Postgres running (npm run db:start).
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import { createHmac } from 'node:crypto';
 import pg from 'pg';
 import { buildApp } from '../src/app.js';
 import { COURSES } from '../src/academy.js';
@@ -240,6 +241,23 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   assert.equal(invoices.find((i) => i.kind === 'production').amount_cents, 75000);
   const perf = invoices.find((i) => i.kind === 'performance');
   assert.deepEqual([perf.amount_cents, perf.status], [40880, 'issued']);
+  assert.equal(perf.currency, 'USD');
+
+  // ---- payment webhooks: signed, fresh, amount must match, each event applied once
+  process.env.PAYMENTS_WEBHOOK_SECRET = 'whsec_test';
+  const hook = async (event, { secret = 'whsec_test', t = Math.floor(Date.now() / 1000) } = {}) => {
+    const raw = JSON.stringify(event);
+    const sig = createHmac('sha256', secret).update(`${t}.${raw}`).digest('hex');
+    const res = await app.inject({ method: 'POST', url: '/v1/webhooks/payments', headers: { 'content-type': 'application/json', 'stripe-signature': `t=${t},v1=${sig}` }, payload: raw });
+    return { status: res.statusCode, body: JSON.parse(res.body) };
+  };
+  const paidEvt = { id: 'evt_paid_1', type: 'payment_intent.succeeded', data: { object: { amount_received: 75000, currency: 'usd', metadata: { invoice_id: invoices.find((i) => i.kind === 'production').id } } } };
+  assert.equal((await hook(paidEvt, { secret: 'whsec_wrong' })).status, 400);
+  assert.equal((await hook(paidEvt, { t: Math.floor(Date.now() / 1000) - 3600 })).status, 400); // stale signature
+  assert.equal((await hook({ ...paidEvt, id: 'evt_short', data: { object: { ...paidEvt.data.object, amount_received: 100 } } })).body.outcome, 'amount_mismatch');
+  assert.equal((await hook(paidEvt)).body.outcome, 'invoice_paid');
+  assert.equal((await hook(paidEvt)).body.duplicate, true); // provider retry: acknowledged, not applied again
+  assert.equal((await ok('GET', `/invoices/${paidEvt.data.object.metadata.invoice_id}`, brand)).status, 'paid');
   assert.equal((await ok('GET', `/campaigns/${camp.id}`, brand)).status, 'completed');
 
   // ---- refund after lock: adjustment + credit note, never an edit
@@ -285,6 +303,8 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   const adj = await ok('POST', '/ledger/adjustments', { as: 'alex', org: id.ops, body: { bookingId: id.booking, amountCents: 600000, reason: 'Test: large goodwill' } });
   assert.equal(adj.status, 'pending_approval');
   assert.equal((await call('POST', `/ledger/adjustments/${adj.id}/approve`, { as: 'alex', org: id.ops })).body.code, 'same_approver');
+  const waiting = await ok('GET', '/ledger?status=locked', rosa); // a location manager sees only what awaits approval
+  assert.ok(waiting.length >= 1 && waiting.every((e) => e.status === 'pending_approval'));
   assert.equal((await ok('POST', `/ledger/adjustments/${adj.id}/approve`, { as: 'bea', org: id.ops })).status, 'locked');
 
   // ---- big payout runs need two different approvers
@@ -296,6 +316,18 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   assert.equal(failed.failed, 1);
   const payout = (await ok('GET', '/seller/payouts', { as: 'sarah' })).find((p) => p.status === 'failed');
   await ok('POST', `/payouts/${payout.id}/retry`, { as: 'alex', org: id.ops });
+
+  // ---- accounting exports: role-scoped CSV, amounts as decimals, formula cells neutralised
+  await ok('POST', '/ledger/adjustments', { as: 'alex', org: id.ops, body: { bookingId: id.booking, amountCents: -150, reason: '=HYPERLINK("http://evil")' } });
+  const exportCsv = async (kind, who) => app.inject({ method: 'GET', url: `/v1/exports/${kind}`, headers: { authorization: `Bearer ${T[who.as]}`, 'x-org-id': who.org } });
+  const ledgerCsv = await exportCsv('ledger', { as: 'alex', org: id.ops });
+  assert.match(ledgerCsv.headers['content-type'], /^text\/csv/);
+  assert.ok(ledgerCsv.body.includes(`"'=HYPERLINK(""http://evil"")"`));
+  assert.ok(ledgerCsv.body.includes(',-1.50,USD,'));
+  assert.equal((await exportCsv('ledger', brand)).statusCode, 403);
+  const brandCsv = (await exportCsv('invoices', brand)).body;
+  assert.match(brandCsv, /^number,brand,campaign,kind/);
+  assert.ok(brandCsv.includes('750.00') && !brandCsv.includes('evil'));
 
   // ---- audit trail and cancellation quote
   assert.ok((await ok('GET', '/admin/audit?action=results.', { as: 'taylor' })).length >= 2);

@@ -27,15 +27,15 @@ Status: **Working** (built and tested), **Partial**, **Missing**, **Blocked** (n
 | LIVE metrics, incidents, emergency stop, closeout | Working | Working | metrics are Manual until a TikTok data integration exists; Vyralink never controls the stream |
 | Control center | Working (SSE) | Working | pushed via Postgres NOTIFY; E2E-verified |
 | Results / refunds import (CSV) | Working | Working | file upload or paste |
-| Reconciliation and lock | Working | Missing | |
-| Invoices, credit notes | Working | Missing | real payments **Blocked** (Stripe account) |
-| Seller ledger, adjustments (two-person) | Working | Partial | seller earnings page; finance screens Phase 5 |
-| Payout runs (two-person) | Working | Missing | real payouts **Blocked** |
-| Disputes | Working | Missing | |
-| Brand campaign report | Working | Missing | |
+| Reconciliation and lock | Working | Working | |
+| Invoices, credit notes | Working | Working | card payments **Blocked** (Stripe account); webhook handler built and tested with signed test events, not yet against Stripe |
+| Seller ledger, adjustments (two-person) | Working | Working | E2E-verified second approver |
+| Payout runs (two-person) | Working | Working | sending is a sandbox simulation; real payouts **Blocked** (Stripe Connect) |
+| Disputes | Working | Working | evidence is text; attachments need storage |
+| Brand campaign report | Working | Working | |
 | Notifications (in-app) | Working | Working | email delivery **Blocked** (no provider) |
 | Messages | Working | Working | contact details masked (E2E-verified) |
-| Admin: verifications, moderation, orgs, users, flags, settings, audit | Working | Partial | review queue (verifications, products, seller sandbox checks); rest later |
+| Admin: verifications, moderation, orgs, users, flags, settings, audit | Working | Partial | review queue, organizations, settings, disputes; flags, user lock and audit viewer not built |
 | TikTok Shop API | Blocked | — | no partner access; CSV import works |
 | Stripe | Blocked | — | no account; simulated |
 | File storage (S3) | Missing | — | |

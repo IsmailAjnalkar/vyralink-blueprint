@@ -38,7 +38,7 @@ Verified locally: a sign-in through the proxy carrying a forged `X-Forwarded-For
 | `DATABASE_URL` | PostgreSQL | local only |
 | `SESSION_SECRET` / `COOKIE_SECURE` | cookies | local defaults |
 | Email provider key | verification, reset, notifications | Blocked: no account (dev writes to an outbox folder) |
-| Stripe keys + webhook secret | brand billing, payouts | Blocked: no account |
+| Stripe keys + `PAYMENTS_WEBHOOK_SECRET` | brand billing, payouts; webhook at `POST /v1/webhooks/payments` | Blocked: no account. Handler verifies Stripe-style signatures and de-duplicates event ids; event-to-record mapping (metadata `invoice_id` / `payout_id`; `payment_intent.*`, `transfer.*`) must be confirmed against the real Stripe setup before go-live |
 | TikTok Shop partner app credentials | order sync | Blocked: no approved access (CSV import works) |
 | S3-compatible storage | product images, documents | Blocked: no bucket |
 | Sentry DSN | error monitoring | optional |

@@ -162,6 +162,7 @@ export default function CampaignPage() {
         </Card>
       )}
 
+      {c?.bookings.some((b) => b.status === "completed") && <Button asChild variant="outline" className="w-fit"><Link href={`/app/campaigns/${c.id}/report`}>Campaign report</Link></Button>}
       {c?.bookings.filter((b) => b.status === "completed").map((b) => <SessionResults key={b.id} bookingId={b.id} org={org} canImport={false} />)}
       {c && <Thread campaignId={c.id} org={org} />}
     </div>

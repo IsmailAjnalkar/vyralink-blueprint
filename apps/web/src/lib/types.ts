@@ -18,3 +18,7 @@ export type Booking = {
   arrival_at?: string; no_show_min: number; checkin_open_min: number; sample_cutoff_hours: number; readiness?: { item: string; result: string; note: string | null }[];
 };
 export type Shipment = { id: string; product: string; product_id: string; expected_qty: number; received_qty: number | null; tracking: string | null; condition: string | null; shelf: string | null; status: string; overdue: boolean; cutoff: string };
+
+export type Invoice = { id: string; number: string; brand?: string; kind: string; basis: string; amount_cents: number; currency: string; status: string; issued_at: string | null; due_at: string | null; paid_at: string | null; booking_id: string | null; campaign_id: string | null };
+export type LedgerEntry = { id: string; seller: string; seller_id: string; booking_id: string; kind: string; basis: string; amount_cents: number; currency: string; status: string; reason: string | null; created_at: string; created_by: string | null };
+export type Dispute = { id: string; type: string; status: string; amount_cents: number; claim: string; decision: string | null; outcome_cents: number | null; booking_id: string | null; invoice_id: string | null; opened_by: string; created_at: string; evidence: { by: string; note: string; at: string }[] };
