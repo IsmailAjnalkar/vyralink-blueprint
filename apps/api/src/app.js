@@ -17,7 +17,10 @@ export const API_PREFIX = '/v1';
  * Builds the API. Auth: `Authorization: Bearer <token>` (the web app turns its httpOnly cookie into this header).
  * Organization context: `x-org-id` header. Options: rateLimitScale multiplies every limit (tests raise it).
  */
-export function buildApp({ pool, logger = false, rateLimitScale = Number(process.env.RATE_LIMIT_SCALE ?? 1), trustProxy = Number(process.env.TRUST_PROXY_HOPS ?? 0) }) {
+export function buildApp({ pool, logger = false, rateLimitScale = Number(process.env.RATE_LIMIT_SCALE ?? 1), trustProxy = process.env.TRUSTED_PROXIES || false }) {
+  // trustProxy names the proxies allowed to set X-Forwarded-For (proxy-addr: addresses, CIDRs, or loopback / linklocal /
+  // uniquelocal). The client is the first address to the right that isn't one of them. Hop counts aren't accepted:
+  // Fastify treats them as "trust nothing" because a count can't check who the nearest proxy is.
   const app = Fastify({ logger, trustProxy, ajv: { customOptions: { removeAdditional: false, coerceTypes: false } } });
   app.decorate('pool', pool);
   app.decorate('live', liveHub(pool));
@@ -65,7 +68,7 @@ export function buildApp({ pool, logger = false, rateLimitScale = Number(process
     if (req.body === undefined && ['POST', 'PUT', 'PATCH'].includes(req.method)) req.body = {};
   });
 
-  app.setErrorHandler((err, req, reply) => {
+  app.setErrorHandler((/** @type {any} */ err, req, reply) => {
     if (err.validation) return reply.code(400).send({ error: 'Please fix the request', code: 'invalid_input', details: err.validation.map((v) => `${v.instancePath || 'body'} ${v.message}`) });
     if (err.statusCode === 429 && !(err instanceof HttpError)) return reply.code(429).send({ error: 'Too many requests. Slow down and try again shortly.', code: 'rate_limited' });
     if (err.code === '23P01') return reply.code(409).send({ error: err.friendly ?? 'That time overlaps an existing booking (including setup and teardown)', code: 'overlap' });

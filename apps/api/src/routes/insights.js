@@ -1,7 +1,7 @@
 // Seller matching and analytics (blueprint B09, B16, O21, F01).
 import { member, one, BRAND } from '../http.js';
 import { rankSellers } from '../matching.js';
-import { loadSettlement } from '../settle.js';
+import { loadSettlements } from '../settle.js';
 import { SELLER_STATS_SQL } from './identity.js';
 
 export default async function insights(app) {
@@ -38,10 +38,9 @@ export default async function insights(app) {
     const { rows: costs } = await pool.query(`SELECT campaign_id, sum(amount_cents)::bigint AS cost FROM invoices WHERE org_id = $1 AND status NOT IN ('void', 'draft') GROUP BY campaign_id`, [m.orgId]);
     const { rows: demo } = await pool.query(`SELECT DISTINCT b.campaign_id FROM session_orders o JOIN bookings b ON b.id = o.booking_id JOIN campaigns c ON c.id = b.campaign_id WHERE c.org_id = $1 AND o.source = 'sandbox'`, [m.orgId]);
     const sandbox = new Set(demo.map((d) => d.campaign_id));
-    // ponytail: one settlement per completed session (N queries); aggregate in SQL if a brand runs hundreds of sessions.
+    // All sessions settled from two queries with the same pure function used for invoices and pay.
     const per = new Map();
-    for (const b of done) {
-      const { liveMinutes, s } = await loadSettlement(pool, b.id);
+    for (const { b, liveMinutes, s } of await loadSettlements(pool, done.map((d) => d.id))) {
       const p = per.get(b.campaign_id) ?? { sessions: 0, liveMinutes: 0, orders: 0, gmvCents: 0, refundsCents: 0, final: true };
       per.set(b.campaign_id, { sessions: p.sessions + 1, liveMinutes: p.liveMinutes + liveMinutes, orders: p.orders + s.orders, gmvCents: p.gmvCents + s.gmvCents, refundsCents: p.refundsCents + s.refundsCents, final: p.final && b.results_status === 'locked' });
     }

@@ -2,15 +2,34 @@
 import { HttpError, one } from './http.js';
 import { dollars, settle } from './money.js';
 
-export async function loadSettlement(db, bookingId) {
-  const b = await one(db, `SELECT b.*, c.org_id AS brand_org, c.name AS campaign, c.status AS campaign_status, c.commission_bps, c.bonus_cents, c.bonus_gmv_threshold_cents,
+const BOOKING_TERMS_SQL = `SELECT b.*, c.org_id AS brand_org, c.name AS campaign, c.status AS campaign_status, c.commission_bps, c.bonus_cents, c.bonus_gmv_threshold_cents,
       c.production_fee_cents, c.performance_fee_bps, c.base_rate_cents AS campaign_rate,
       (SELECT (terms->>'baseRateCents')::int FROM contracts k WHERE k.campaign_id = c.id AND NOT k.void AND k.seller_id = b.seller_id AND k.seller_signed_at IS NOT NULL AND k.brand_signed_at IS NOT NULL ORDER BY version DESC LIMIT 1) AS agreed_rate
-    FROM bookings b JOIN campaigns c ON c.id = b.campaign_id WHERE b.id = $1`, [bookingId], 'Booking not found');
-  const { rows: orders } = await db.query('SELECT * FROM session_orders WHERE booking_id = $1', [bookingId]);
-  const liveMinutes = b.actual_start && b.actual_end ? Math.max(0, Math.round((b.actual_end - b.actual_start) / 60000) - b.minutes_lost) : 0;
+    FROM bookings b JOIN campaigns c ON c.id = b.campaign_id`;
+
+/** Pure: a booking row (with campaign terms) and its orders → the settlement. */
+function settlementFrom(b, orders) {
+  const liveMinutes = b.actual_start && b.actual_end ? Math.max(0, Math.round((b.actual_end.getTime() - b.actual_start.getTime()) / 60000) - b.minutes_lost) : 0;
   const terms = { base_rate_cents: b.agreed_rate ?? b.campaign_rate, commission_bps: b.commission_bps, bonus_cents: b.bonus_cents, bonus_gmv_threshold_cents: b.bonus_gmv_threshold_cents, performance_fee_bps: b.performance_fee_bps, production_fee_cents: b.production_fee_cents };
   return { b, terms, liveMinutes, s: settle(orders, terms, liveMinutes) };
+}
+
+export async function loadSettlement(db, bookingId) {
+  const b = await one(db, `${BOOKING_TERMS_SQL} WHERE b.id = $1`, [bookingId], 'Booking not found');
+  const { rows: orders } = await db.query('SELECT * FROM session_orders WHERE booking_id = $1', [bookingId]);
+  return settlementFrom(b, orders);
+}
+
+/** The same settlement for many bookings in two queries (analytics); identical figures to loadSettlement. */
+export async function loadSettlements(db, bookingIds) {
+  if (!bookingIds.length) return [];
+  const [{ rows: bookings }, { rows: orders }] = await Promise.all([
+    db.query(`${BOOKING_TERMS_SQL} WHERE b.id = ANY($1::uuid[])`, [bookingIds]),
+    db.query('SELECT * FROM session_orders WHERE booking_id = ANY($1::uuid[])', [bookingIds]),
+  ]);
+  const byBooking = new Map();
+  for (const o of orders) byBooking.set(o.booking_id, [...(byBooking.get(o.booking_id) ?? []), o]);
+  return bookings.map((b) => settlementFrom(b, byBooking.get(b.id) ?? []));
 }
 
 const commissionBasis = (s, t) => `${t.commission_bps / 100}% × ${dollars(s.eligibleCents)} eligible attributable sales`;

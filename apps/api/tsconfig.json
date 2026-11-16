@@ -1,0 +1,17 @@
+{
+  // Type-checks the API's JavaScript with the TypeScript compiler (JSDoc types where inference isn't enough).
+  // No build step: Node runs the same files. `npm run typecheck` runs in CI.
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.js", "src/**/*.d.ts", "scripts/**/*.mjs"]
+}

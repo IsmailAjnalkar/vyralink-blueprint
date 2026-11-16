@@ -545,7 +545,7 @@ export default async function studio(app) {
     return {
       note: 'Vyralink does not control TikTok streams. Start, end and in-stream actions happen in TikTok on the studio device.',
       sessions: rows.sort((a, b) => sev(a) - sev(b)).map((r) => {
-        const hours = r.actual_start ? (Date.now() - new Date(r.actual_start)) / 3.6e6 : 0;
+        const hours = r.actual_start ? (Date.now() - new Date(r.actual_start).getTime()) / 3.6e6 : 0;
         return {
           ...r, readiness: `${r.readiness_passed} / ${READINESS.length}`,
           connection: { value: null, source: 'Unavailable' }, viewers: { value: null, source: 'Unavailable' },

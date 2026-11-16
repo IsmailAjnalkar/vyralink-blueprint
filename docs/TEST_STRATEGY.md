@@ -6,7 +6,9 @@
 | Integration | `node:test` + Fastify `inject` + a fresh PostgreSQL database per run | every commit | every route group, tenancy, booking conflicts, ledger, payouts, disputes |
 | End to end | Playwright | every commit (CI) | GlowSkin scenario through the web UI (`e2e/glowskin.spec.ts`). `npm run test:e2e` (needs `npm run db:start` and a web build). Done through the Go (10 tests); LIVE → payout follows Phases 4–5 |
 | Security | integration tests | every commit | cross-tenant reads/writes, privilege escalation, invalid/expired tokens, CSRF, rate limits, webhook replay, injection payloads |
-| Performance | scripted load (autocannon) | before release | concurrent booking holds, search, dashboards |
+| Performance | `npm run perf -w @vyralink/api` (seeded volume, HTTP, 10 in flight) | before release | p95 < 500 ms on search, matching, campaigns, analytics, bookings, control center: all pass |
+| Accessibility | axe-core in the GlowSkin E2E | every E2E run | WCAG 2.1 A/AA, 33 screens across all roles: 0 violations |
+| Type check | `npm run typecheck` (web strict TS; API checkJs) | every commit | 0 errors |
 
 ## Thresholds (local development hardware; re-measure on staging)
 

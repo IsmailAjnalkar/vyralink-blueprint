@@ -23,7 +23,7 @@ The brief allows an existing working architecture when it is justified. These we
 | Prisma | **SQL schema + `pg`** | Core guarantees are database features Prisma can't express: `EXCLUDE USING gist` (no double booking), partial unique indexes (one ledger line per kind), advisory locks (payout runs). |
 | BullMQ + Redis | **PostgreSQL job table (`FOR UPDATE SKIP LOCKED`)** | Jobs are enqueued in the same transaction as the business change (transactional outbox), so an email is never sent for a rolled-back payment. One less service to run and secure. Revisit if job volume needs it. |
 | Redis cache | None yet | No measured need. Add when a query is shown to be slow. |
-| TypeScript everywhere | Web: strict TypeScript. API: JavaScript today | Converting the API is planned (Phase 8); until then the API is covered by integration tests and JSON-schema validation on every route. |
+| TypeScript everywhere | Web: strict TypeScript. API: JavaScript **type-checked by the TypeScript compiler** (`checkJs`, `npm run typecheck -w @vyralink/api`, 0 errors; Fastify request/instance typed in `src/types.d.ts`) | Rewriting ~4,000 tested lines into .ts late in the build risked regressions for little gain: the compiler already checks the code, Node runs the same files with no build step, and every route has JSON-schema validation. Next step when the team wants it: turn on `strict` file by file, or rename to .ts (Node 24 strips types natively). |
 
 ## Core rules (enforced in the database or server)
 

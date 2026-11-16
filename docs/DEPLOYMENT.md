@@ -30,10 +30,10 @@ Per-IP rate limits and the session list depend on the real client address. Count
 
 | Variable | Service | Value |
 |---|---|---|
-| `TRUST_PROXY_HOPS` | API | `1` when reached only through the web app (it sets `X-Forwarded-For`), plus one per load balancer in front of the API. `0` if the API is exposed directly. |
+| `TRUSTED_PROXIES` | API | Addresses allowed to set `X-Forwarded-For`: the web app (and any load balancer in front of the API), as IPs, CIDRs or `loopback` / `uniquelocal`. Locally `loopback`; in Docker the internal network, e.g. `uniquelocal`. Unset if the API is exposed directly. A hop count does **not** work: Fastify 5 treats a number as "trust nothing" (verified by `test/proxy.test.js`). |
 | `TRUSTED_PROXY_HOPS` | web | Number of proxies/load balancers in front of the web app (`0` locally). Client-written `X-Forwarded-For` entries are ignored. |
 
-Verified locally: a sign-in through the proxy carrying a forged `X-Forwarded-For: 6.6.6.6` stored `127.0.0.1` on the session.
+Verified: `apps/api/test/proxy.test.js` shows separate rate-limit buckets per client behind a trusted proxy, and that a forged header is ignored without one. (An earlier `TRUST_PROXY_HOPS=1` setting looked right but made every user share one bucket; found in Phase 8 and replaced.)
 
 ## Planned (Phase 9)
 

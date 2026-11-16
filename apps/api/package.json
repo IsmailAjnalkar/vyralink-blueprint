@@ -14,7 +14,9 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "routes": "node scripts/list-routes.mjs",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "perf": "node scripts/perf-smoke.mjs"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.2",
@@ -23,6 +25,7 @@
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@types/pg": "^8.23.1",
     "embedded-postgres": "^18.4.0-beta.17"
   }
 }

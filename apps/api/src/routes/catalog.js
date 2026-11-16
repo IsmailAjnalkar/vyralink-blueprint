@@ -236,7 +236,7 @@ export default async function catalog(app) {
       if (m.role !== 'brand_owner') throw forbidden('Only a Brand Owner can cancel a campaign');
       assertMove('campaign', c.status, 'cancelled');
       const { rows: [bk] } = await db.query(`SELECT * FROM bookings WHERE campaign_id = $1 AND status IN ${ACTIVE_BOOKING} FOR UPDATE`, [c.id]);
-      const hoursBefore = (new Date(c.starts_at) - Date.now()) / 3.6e6;
+      const hoursBefore = (new Date(c.starts_at).getTime() - Date.now()) / 3.6e6;
       const fee = bk && bk.status !== 'hold' ? cancellationFee(c.production_fee_cents, hoursBefore) : 0;
       if (!req.body.confirm) return { quote: { feeCents: fee, hoursBefore: Math.floor(hoursBefore), policy: 'Free more than 72 h before; 50% of the production fee 24–72 h; 100% within 24 h' } };
       await db.query(`UPDATE campaigns SET status = 'cancelled', cancel_fee_cents = $2 WHERE id = $1`, [c.id, fee]);
