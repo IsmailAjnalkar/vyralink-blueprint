@@ -30,5 +30,9 @@ Batches 2–6 **merge** into the existing `project/canvas.json`, so run them in 
 ## Cautions
 
 - `gen.mjs` rebuilds `canvas.json` from scratch and overwrites `Main.dc.html`. Only run it for a full rebuild, then run gen2–gen6 after it.
-- The published `Main.dc.html` (read-me board) has batch-status edits made directly on the canvas. The copy here is the original Batch 1 version. Download the live one from the canvas before republishing it.
+- `Main.dc.html` (read-me board) was edited directly on the canvas after Batch 1; the copy here has the same edits applied, so `gen.mjs` would overwrite them.
+
+## Viewing locally
+
+Open `project/Main.dc.html` in a browser. The boards are plain HTML with inline styles, and links between boards work from the folder. Flowcharts and journeys are wide; zoom out to see them whole.
 - Before republishing anything, check whether someone edited the canvas since (the publish needs the live version id and is refused otherwise).
