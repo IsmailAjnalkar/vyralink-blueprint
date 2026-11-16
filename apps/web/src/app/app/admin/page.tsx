@@ -15,19 +15,26 @@ import { useAction, useLoad } from "@/lib/use-load";
 type Verification = { id: string; org_name: string; version: number; status: string; details: Record<string, string>; documents: { type: string; fileName: string; fileId?: string }[]; created_at: string };
 type Product = { id: string; image_file_id: string | null; name: string; brand: string; sku: string; price_cents: number; category: string; description: string; selling_points: string[]; restricted_claims: string[] };
 type Org = { id: string; name: string; kind: string; status: string; members: number };
-type User = { id: string; name: string; email: string; locked: boolean; memberships: unknown[] };
+type User = { id: string; name: string; email: string; locked: boolean; mfa_on: boolean; is_super_admin: boolean; memberships: { role: string }[] };
+type AuditRow = { id: string; at: string; action: string; actor_name: string | null; actor_email: string | null; target_type: string | null; target_id: string | null; detail: Record<string, unknown>; ip: string | null };
 
 export default function AdminPage() {
   const { me } = useSession();
-  const { one } = useAsk();
+  const { one, confirm } = useAsk();
   const ver = useLoad(() => api<Verification[]>("admin/verifications?status=submitted"), "ver");
   const prods = useLoad(() => api<Product[]>("admin/products"), "prods");
   const users = useLoad(() => api<User[]>("admin/users"), "users");
   const orgs = useLoad(() => api<Org[]>("admin/orgs"), "orgs");
   const settings = useLoad(() => api<Record<string, unknown>>("admin/settings"), "settings");
   const integrations = useLoad(() => api<{ name: string; provider: string; status: string; detail: string }[]>("integrations"), "integrations");
-  const act = useAction(() => Promise.all([ver.reload(), prods.reload(), orgs.reload(), settings.reload()]));
+  const [auditFilter, setAuditFilter] = useState("");
+  const auditLog = useLoad(() => api<AuditRow[]>(`admin/audit?limit=200${auditFilter ? `&action=${encodeURIComponent(auditFilter)}` : ""}`), `audit:${auditFilter}`);
+  const act = useAction(() => Promise.all([ver.reload(), prods.reload(), users.reload(), orgs.reload(), settings.reload(), auditLog.reload()]));
   const [q, setQ] = useState("");
+  const [who, setWho] = useState("");
+  const careful = async (title: string, description: string, label: string, path: string, body: unknown, okMsg: string) => {
+    if (await confirm(title, description, label, true)) act.run(post(path, body), okMsg);
+  };
   const canDecide = me.user.is_super_admin;
   const post = (path: string, body: unknown) => () => api(path, { body });
   const decide = async (path: string, decision: string, okMsg: string) => {
@@ -46,9 +53,11 @@ export default function AdminPage() {
           <TabsTrigger value="ver">Brand verification ({ver.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="prod">Products ({prods.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="sellers">Seller checks</TabsTrigger>
+          <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="orgs">Organizations</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          <TabsTrigger value="audit">Audit log</TabsTrigger>
         </TabsList>
 
         <TabsContent value="ver" className="grid gap-3">
@@ -118,6 +127,64 @@ export default function AdminPage() {
           </div>
         </TabsContent>
 
+        <TabsContent value="people" className="grid gap-3">
+          <p className="text-sm text-muted-foreground">Locking signs the person out everywhere and blocks sign-in. Resetting two-step verification signs them out; they set it up again at next sign-in. Both are audited.</p>
+          <label className="grid max-w-sm gap-1 text-sm">Search people<input className="h-9 rounded-md border bg-background px-2" value={who} onChange={(e) => setWho(e.target.value)} /></label>
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Roles</TableHead><TableHead>Two-step</TableHead><TableHead>Account</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
+              <TableBody>
+                {users.data?.filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(who.toLowerCase())).map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="font-medium">{u.name}</TableCell>
+                    <TableCell>{u.email}</TableCell>
+                    <TableCell className="text-xs">{[u.is_super_admin && "super admin", ...u.memberships.map((m) => m.role.replaceAll("_", " "))].filter(Boolean).join(", ") || "LIVE seller"}</TableCell>
+                    <TableCell>{u.mfa_on ? "On" : "Off"}</TableCell>
+                    <TableCell><Status value={u.locked ? "locked" : "active"} /></TableCell>
+                    <TableCell>
+                      {canDecide && u.id !== me.user.id && (
+                        <div className="flex gap-2">
+                          {u.locked
+                            ? <Button size="sm" variant="outline" disabled={act.busy} onClick={() => act.run(post(`admin/users/${u.id}/lock`, { locked: false }), `${u.name} can sign in again.`)}>Unlock</Button>
+                            : <Button size="sm" variant="destructive" disabled={act.busy} onClick={() => careful(`Lock ${u.name}?`, "They are signed out everywhere and can’t sign in until unlocked.", "Lock account", `admin/users/${u.id}/lock`, { locked: true }, `${u.name} is locked and signed out.`)}>Lock</Button>}
+                          {u.mfa_on && <Button size="sm" variant="outline" disabled={act.busy} onClick={() => careful(`Reset two-step verification for ${u.name}?`, "Only after confirming who they are (e.g. a lost phone). They are signed out and set it up again.", "Reset", `admin/users/${u.id}/reset-mfa`, {}, `${u.name}’s two-step verification was reset.`)}>Reset two-step</Button>}
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="audit" className="grid gap-3">
+          <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); setAuditFilter(String(new FormData(e.currentTarget).get("action")).trim()); }}>
+            <label className="grid gap-1 text-sm">Action starts with<input name="action" defaultValue={auditFilter} placeholder="e.g. user. or payout" className="h-9 w-56 rounded-md border bg-background px-2" /></label>
+            <Button type="submit" size="sm" variant="outline">Filter</Button>
+          </form>
+          <p className="text-sm text-muted-foreground">Newest 200 entries. Audit entries can’t be edited or deleted.</p>
+          {auditLog.error && <Messages error={auditLog.error} />}
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Who</TableHead><TableHead>Action</TableHead><TableHead>Target</TableHead><TableHead>Details</TableHead><TableHead>IP</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {auditLog.data?.map((a) => (
+                  <TableRow key={a.id}>
+                    <TableCell className="whitespace-nowrap">{when(a.at)}</TableCell>
+                    <TableCell>{a.actor_name ?? "System"}{a.actor_email && <span className="block text-xs text-muted-foreground">{a.actor_email}</span>}</TableCell>
+                    <TableCell className="font-mono text-xs">{a.action}</TableCell>
+                    <TableCell className="text-xs">{a.target_type}{a.target_id && <span className="block font-mono text-muted-foreground">{a.target_id.slice(0, 8)}</span>}</TableCell>
+                    <TableCell className="max-w-xs truncate font-mono text-xs" title={JSON.stringify(a.detail)}>{Object.keys(a.detail ?? {}).length ? JSON.stringify(a.detail) : "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{a.ip ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {auditLog.data?.length === 0 && <Empty>No entries match.</Empty>}
+        </TabsContent>
+
         <TabsContent value="orgs" className="grid gap-4">
           {canDecide && (
             <Card>
@@ -168,7 +235,7 @@ export default function AdminPage() {
                 <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => {
                   e.preventDefault();
                   const raw = String(new FormData(e.currentTarget).get("value")).trim();
-                  const value = /^-?d+$/.test(raw) ? Number(raw) : raw;
+                  const value = /^-?\d+$/.test(raw) ? Number(raw) : raw;
                   act.run(() => api(`admin/settings/${k}`, { method: "PUT", body: { value } }), `${k} = ${raw}`);
                 }}>
                   <label className="grid gap-1 text-sm"><span className="font-mono">{k}</span><input name="value" aria-label={k} defaultValue={String(v)} disabled={!canDecide} className="h-9 w-48 rounded-md border bg-background px-2" /></label>

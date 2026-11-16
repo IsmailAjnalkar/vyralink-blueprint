@@ -24,9 +24,9 @@ API: 139 paths / 158 operations, documented at `/v1/openapi.json`. Web: 33 signe
 
 | Suite | Result |
 |---|---|
-| API (Node test runner, real Postgres) | **35/35 pass**: the GlowSkin money flow, auth, money controls, webhook, exports, uploads, matching, providers, proxy IP |
-| End-to-end in a browser (Playwright) | **22/22 pass** in about 2 minutes. One unexplained failure in the last three runs (see §7) |
-| Accessibility (axe, WCAG 2.1 A/AA) | **0 violations** on 33 screens across every role |
+| API (Node test runner, real Postgres) | **36/36 pass**: the GlowSkin money flow, auth, money controls, webhook, exports, uploads, matching, providers, proxy IP, admin settings and account lock |
+| End-to-end in a browser (Playwright) | **23/23 pass** in about 2 minutes, locally and on GitHub CI. One unexplained failure on 16 Nov, not seen since (see §7) |
+| Accessibility (axe, WCAG 2.1 A/AA) | **0 violations** on 33 screens across every role, plus the admin People and Audit log tabs |
 | Performance (`npm run perf`: 1,000 sellers, 300 sessions, 6,000 orders) | **all 7 heavy endpoints p95 < 500 ms** (slowest: brand analytics 303 ms) |
 | Type checks | web (strict TypeScript) and API (TypeScript checker over JavaScript): **0 errors** |
 | Lint | 0 errors (1 known warning) |
@@ -63,13 +63,14 @@ API: 139 paths / 158 operations, documented at `/v1/openapi.json`. Web: 33 signe
 | S3 storage | no bucket | bucket + adapter (local volume works on one machine) |
 | TikTok Shop order sync, live viewers/conversion | no partner approval | approval + adapter; CSV import works |
 | Two-party reschedule of confirmed sessions | not built | cancel and rebook today |
-| Admin: feature flags, user lock, audit-log screens | not built | API exists |
+| Admin: feature-flag screen | left out on purpose: the six flags are for features that don’t exist yet, so a switch would control nothing | add with the first flagged feature (People and Audit log tabs are built) |
 | Error monitoring (e.g. Sentry) | not set up | DSN + SDK |
 | Full TypeScript rewrite of the API | deliberately not done | the compiler already checks it; see ARCHITECTURE.md |
 
 ## 7. Known issues and open questions
 
-- **One unexplained browser-test failure**: "Unexpected end of JSON input" at the start of the finance step, in 1 of the last 3 runs. Two re-runs passed. It needs a CI run or two to reproduce before it can be called fixed.
+- **One unexplained browser-test failure**: "Unexpected end of JSON input" at the start of the finance step, once on 16 Nov (local Edge). Not seen since in 4 local and 3 GitHub CI runs. A later 18-minute hang was traced to the laptop entering standby mid-run (Windows events 506/507), not the app. The original failure did not coincide with standby, so it stays open.
+- **Fixed after the first report**: the admin Settings form saved numbers as text (a regex lost its backslash), which would have broken campaign creation and limits after any settings change; the API now only accepts whole numbers for numeric settings. Malformed ids in a URL now return 400 instead of 500.
 - **Fees chosen by brands** (business decision): brands set the production and performance fees on their own campaigns. Creator Hub may want to approve or fix them.
 - **IP handling history**: two defects were found and fixed (Phase 8 and Phase 9). The current setup is verified in the container run.
 

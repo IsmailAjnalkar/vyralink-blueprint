@@ -183,6 +183,27 @@ test('support admins can read the admin console but not change it', async () => 
   assert.equal((await call('POST', '/admin/orgs', { token: t, body: { kind: 'operator', name: 'Nope' } })).status, 403);
 });
 
+test('numeric settings only take whole numbers (text would break SQL casts and comparisons)', async () => {
+  const t = await account('super@example.com');
+  await pool.query(`UPDATE users SET is_super_admin = true WHERE email = 'super@example.com'`);
+  const { secret } = (await call('POST', '/auth/mfa/setup', { token: t })).body;
+  await call('POST', '/auth/mfa/enable', { token: t, body: { code: totp(base32Decode(secret)) } });
+  for (const value of ['15', -1, 1.5, null]) assert.equal((await call('PUT', '/admin/settings/invoice_due_days', { token: t, body: { value } })).body.code, 'invalid_setting', String(value));
+  assert.equal((await call('PUT', '/admin/settings/invoice_due_days', { token: t, body: { value: 15 } })).status, 200);
+  assert.equal((await call('PUT', '/admin/settings/no_such_setting', { token: t, body: { value: 1 } })).status, 404);
+
+  // Account lock: not yourself; a malformed id is a 400, not a server error; locking signs the person out.
+  const meId = (await call('GET', '/me', { token: t })).body.user.id;
+  assert.equal((await call('POST', `/admin/users/${meId}/lock`, { token: t, body: { locked: true } })).body.code, 'self_lock');
+  assert.equal((await call('POST', '/admin/users/not-a-uuid/lock', { token: t, body: { locked: true } })).status, 400);
+  const other = await account('lockme@example.com');
+  const otherId = (await call('GET', '/me', { token: other })).body.user.id;
+  assert.equal((await call('POST', `/admin/users/${otherId}/lock`, { token: t, body: { locked: true } })).status, 200);
+  assert.equal((await call('GET', '/me', { token: other })).status, 401);
+  const log = (await call('GET', '/admin/audit?action=user.locked', { token: t })).body;
+  assert.equal(log[0].actor_email, 'super@example.com');
+});
+
 test('rate limits apply to sign-in attempts', async () => {
   const strict = buildApp({ pool, rateLimitScale: 1 });
   await strict.ready();

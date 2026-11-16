@@ -38,6 +38,10 @@ async function enrollMfa(page: Page) {
   await page.getByRole("button", { name: "Turn on" }).click();
   await expect(page.getByText("Signing in asks for a code")).toBeVisible();
 }
+/** WCAG 2.1 A/AA violations on the page as it is now, one line each. */
+const axe = async (page: Page) =>
+  (await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations
+    .map((v) => `${page.url()}: [${v.impact}] ${v.id}: ${v.help} (${v.nodes.length}) e.g. ${v.nodes[0]?.target.join(" ")}`);
 const card = (page: Page, text: string) => page.locator("div[data-slot=card]", { hasText: text });
 // A real 1×1 PNG and a minimal PDF: the API checks the bytes, not the name or declared type.
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -520,6 +524,29 @@ test("the admin sees which integrations are real, sandbox or blocked", async () 
   }
 });
 
+test("the admin locks and unlocks an account; the audit log shows who did it", async () => {
+  await adminPage.goto("/app/admin");
+  await adminPage.getByRole("tab", { name: "People" }).click();
+  await adminPage.getByLabel("Search people").last().fill(sam.email);
+  const row = adminPage.getByRole("row", { name: new RegExp(sam.name) });
+  await expect(row.getByRole("button", { name: "Reset two-step" })).toHaveCount(0); // Sam's role doesn't use it
+  await row.getByRole("button", { name: "Lock" }).click();
+  await adminPage.getByRole("dialog", { name: `Lock ${sam.name}?` }).getByRole("button", { name: "Lock account" }).click();
+  await expect(adminPage.getByRole("status").filter({ hasText: "is locked and signed out" })).toBeVisible();
+  await samPage.goto("/app/studio");
+  await expect(samPage).toHaveURL(/\/login/); // the session was ended
+  expect(await axe(adminPage)).toEqual([]);
+  await row.getByRole("button", { name: "Unlock" }).click();
+  await expect(adminPage.getByRole("status").filter({ hasText: "can sign in again" })).toBeVisible();
+
+  await adminPage.getByRole("tab", { name: "Audit log" }).click();
+  await adminPage.getByLabel("Action starts with").fill("user.");
+  await adminPage.getByRole("button", { name: "Filter" }).click();
+  await expect(adminPage.getByRole("row", { name: /user\.unlocked/ })).toContainText(ADMIN.email);
+  await expect(adminPage.getByRole("row", { name: /user\.locked/ })).toContainText(ADMIN.email);
+  expect(await axe(adminPage)).toEqual([]);
+});
+
 // ---------------------------------------------------------------- Phase 7: analytics and matching
 test("brand analytics match the settled figures; chart has a table view", async () => {
   const b = brandPage;
@@ -573,8 +600,7 @@ test("every role's main screens have no WCAG 2.1 A/AA violations", async ({ brow
     for (const path of paths) {
       await page.goto(path);
       await page.waitForLoadState("networkidle");
-      const { violations } = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-      for (const v of violations) problems.push(`${path}: [${v.impact}] ${v.id}: ${v.help} (${v.nodes.length}) e.g. ${v.nodes[0]?.target.join(" ")}`);
+      problems.push(...(await axe(page)));
     }
   }
   expect(problems, problems.join("\n")).toEqual([]);

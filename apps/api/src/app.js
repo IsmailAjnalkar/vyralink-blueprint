@@ -75,6 +75,7 @@ export function buildApp({ pool, logger = false, rateLimitScale = Number(process
     // No database detail in responses: it would reveal other records.
     if (err.code === '23505') return reply.code(409).send({ error: 'That already exists', code: 'duplicate' });
     if (err.code === '23514') return reply.code(400).send({ error: 'A value is out of range', code: 'invalid_input' });
+    if (err.code === '22P02') return reply.code(400).send({ error: 'Malformed id or value', code: 'invalid_input' }); // e.g. a non-UUID in the path
     if (err.statusCode && err.statusCode < 500) return reply.code(err.statusCode).send({ error: err.message, code: err.code ?? 'bad_request' });
     req.log.error(err);
     return reply.code(500).send({ error: 'Something went wrong', code: 'internal' });

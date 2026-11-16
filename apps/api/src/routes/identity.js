@@ -239,7 +239,7 @@ export default async function identity(app) {
 
   app.get('/admin/users', async (req) => {
     platformStaff(req);
-    const { rows } = await pool.query(`SELECT u.id, u.email, u.name, u.is_super_admin, u.locked,
+    const { rows } = await pool.query(`SELECT u.id, u.email, u.name, u.is_super_admin, u.locked, u.mfa_enabled_at IS NOT NULL AS mfa_on,
       COALESCE(json_agg(json_build_object('orgId', m.org_id, 'role', m.role)) FILTER (WHERE m.org_id IS NOT NULL), '[]') AS memberships
       FROM users u LEFT JOIN memberships m ON m.user_id = u.id GROUP BY u.id ORDER BY u.name`);
     return rows;
@@ -247,8 +247,10 @@ export default async function identity(app) {
 
   app.post('/admin/users/:id/lock', { schema: body({ locked: 'boolean' }) }, async (req) => {
     superAdmin(req);
+    if (req.params.id === req.user.id) throw bad('You can’t lock your own account.', 'self_lock');
     await tx(pool, async (db) => {
-      await db.query('UPDATE users SET locked = $2 WHERE id = $1', [req.params.id, req.body.locked]);
+      const { rowCount } = await db.query('UPDATE users SET locked = $2 WHERE id = $1', [req.params.id, req.body.locked]);
+      if (!rowCount) throw notFound('User not found');
       if (req.body.locked) await db.query('DELETE FROM sessions WHERE user_id = $1', [req.params.id]);
       await audit(db, req, req.body.locked ? 'user.locked' : 'user.unlocked', 'user', req.params.id);
     });
@@ -289,8 +291,12 @@ export default async function identity(app) {
   });
   app.put('/admin/settings/:key', { schema: body({ value: {} }) }, async (req) => {
     superAdmin(req);
-    const { rows: [s] } = await pool.query('UPDATE settings SET value = $2 WHERE key = $1 RETURNING *', [req.params.key, JSON.stringify(req.body.value)]);
-    if (!s) throw notFound('Unknown setting');
+    const { value } = req.body;
+    // Settings are read as numbers (SQL casts, comparisons, money): a numeric setting only takes a whole number ≥ 0.
+    const { rows: [cur] } = await pool.query('SELECT value FROM settings WHERE key = $1', [req.params.key]);
+    if (!cur) throw notFound('Unknown setting');
+    if (typeof cur.value === 'number' && !(Number.isSafeInteger(value) && value >= 0)) throw bad('This setting must be a whole number, 0 or more.', 'invalid_setting');
+    const { rows: [s] } = await pool.query('UPDATE settings SET value = $2 WHERE key = $1 RETURNING *', [req.params.key, JSON.stringify(value)]);
     await audit(pool, req, 'setting.changed', 'setting', s.key, { value: req.body.value });
     return s;
   });
@@ -298,7 +304,8 @@ export default async function identity(app) {
   app.get('/admin/audit', async (req) => {
     platformStaff(req);
     const { rows } = await pool.query(
-      `SELECT * FROM audit_log WHERE ($1::text IS NULL OR action LIKE $1 || '%') AND ($2::uuid IS NULL OR org_id = $2) ORDER BY id DESC LIMIT LEAST(COALESCE($3::int, 200), 1000)`,
+      `SELECT a.*, u.name AS actor_name, u.email AS actor_email FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
+       WHERE ($1::text IS NULL OR a.action LIKE $1 || '%') AND ($2::uuid IS NULL OR a.org_id = $2) ORDER BY a.id DESC LIMIT LEAST(COALESCE($3::int, 200), 1000)`,
       [req.query.action ?? null, req.query.orgId ?? null, req.query.limit ?? null]);
     return rows;
   });
