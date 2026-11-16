@@ -436,11 +436,15 @@ export default async function studio(app) {
   app.get('/bookings/:id/settlement', async (req) => {
     const b = await anyBooking(pool, req, req.params.id);
     const { terms, liveMinutes, s } = await loadSettlement(pool, b.id);
-    const isSeller = b.seller_id === req.user.id;
+    // Sellers see their own terms and pay, never the brand's fees.
+    const isSeller = b.seller_id === req.user.id && req.membership?.orgId !== b.brand_org && req.membership?.orgId !== b.ops_org;
+    const { performanceFeeCents, productionFeeCents, ...pay } = s;
+    const { performance_fee_bps, production_fee_cents, ...sellerTerms } = terms;
     return {
-      resultsStatus: b.results_status, returnsWindowEndsAt: b.returns_window_ends_at, liveMinutes, terms,
-      ...s, gmvPerHourCents: liveMinutes ? Math.round((s.gmvCents * 60) / liveMinutes) : null,
-      ...(isSeller ? { performanceFeeCents: undefined, productionFeeCents: undefined } : {}),
+      resultsStatus: b.results_status, returnsWindowEndsAt: b.returns_window_ends_at, liveMinutes,
+      terms: isSeller ? sellerTerms : terms,
+      ...pay, ...(isSeller ? {} : { performanceFeeCents, productionFeeCents }),
+      gmvPerHourCents: liveMinutes ? Math.round((s.gmvCents * 60) / liveMinutes) : null,
       sources: { orders: b.results_status === 'pending' ? 'Delayed' : 'Imported', liveHours: 'Verified (studio log)', viewers: 'Unavailable', conversion: 'Unavailable' },
     };
   });

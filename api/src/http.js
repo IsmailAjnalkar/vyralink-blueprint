@@ -60,6 +60,8 @@ export function member(req, roles) {
   const m = req.membership;
   if (!m) throw forbidden('Choose an organization (x-org-id header) you belong to');
   if (roles && !roles.includes(m.role)) throw forbidden(`This needs one of: ${roles.join(', ')}`);
+  // A suspended organization is read-only for every member, on every route.
+  if (m.orgStatus === 'suspended' && req.method !== 'GET') throw forbidden('This organization is suspended. Contact support.');
   return m;
 }
 export function superAdmin(req) {

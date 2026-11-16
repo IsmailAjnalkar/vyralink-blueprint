@@ -77,8 +77,9 @@ export default async function catalog(app) {
     const b = req.body;
     return tx(pool, async (db) => {
       const p = await one(db, 'SELECT * FROM products WHERE id = $1 AND org_id = $2 FOR UPDATE', [req.params.id, m.orgId], 'Product not found');
-      // Changing what sellers may say sends an approved product back to review.
-      const claimsChanged = (b.sellingPoints || b.restrictedClaims || b.description) && p.status === 'approved';
+      // Changing what sellers may say (or the name they say it about) sends an approved product back to review.
+      const changed = (k, col) => b[k] !== undefined && JSON.stringify(b[k]) !== JSON.stringify(p[col]);
+      const claimsChanged = p.status === 'approved' && (changed('name', 'name') || changed('description', 'description') || changed('sellingPoints', 'selling_points') || changed('restrictedClaims', 'restricted_claims'));
       const { rows: [u] } = await db.query(
         `UPDATE products SET name = COALESCE($2, name), price_cents = COALESCE($3, price_cents), inventory = COALESCE($4, inventory), samples_available = COALESCE($5, samples_available),
            commission_bps = COALESCE($6, commission_bps), description = COALESCE($7, description), selling_points = COALESCE($8, selling_points), restricted_claims = COALESCE($9, restricted_claims),
@@ -163,7 +164,10 @@ export default async function catalog(app) {
     const [inv, con, bk] = await Promise.all([
       pool.query('SELECT i.*, sp.display_name FROM invitations i JOIN seller_profiles sp ON sp.user_id = i.seller_id WHERE campaign_id = $1 ORDER BY created_at', [c.id]),
       pool.query('SELECT * FROM contracts WHERE campaign_id = $1 ORDER BY version', [c.id]),
-      pool.query(`SELECT b.*, bo.name AS booth FROM bookings b JOIN booths bo ON bo.id = b.booth_id WHERE campaign_id = $1 ORDER BY created_at`, [c.id]),
+      // Explicit columns: the check-in code is for the seller and studio only.
+      pool.query(`SELECT b.id, b.booth_id, b.seller_id, b.producer_id, b.starts_at, b.ends_at, b.status, b.hold_expires_at, b.checked_in_at, b.actual_start, b.actual_end,
+          b.minutes_lost, b.partial, b.results_status, b.returns_window_ends_at, b.locked_at, bo.name AS booth
+        FROM bookings b JOIN booths bo ON bo.id = b.booth_id WHERE campaign_id = $1 ORDER BY created_at`, [c.id]),
     ]);
     return { ...c, invitations: inv.rows, contracts: con.rows, bookings: bk.rows };
   });
@@ -245,11 +249,15 @@ export default async function catalog(app) {
   // ---------------------------------------------------------------- booth holds (campaign step 7)
   app.post('/campaigns/:id/hold', { schema: body({ boothId: 'uuid' }) }, async (req, reply) => {
     return tx(pool, async (db) => {
-      const { c } = await brandCampaign(db, req, req.params.id, true);
+      const { m, c } = await brandCampaign(db, req, req.params.id, true);
+      if (m.orgStatus !== 'verified') throw conflict('Verify your company before holding studio time', 'brand_not_verified');
       if (!['draft', 'pending_approval', 'published', 'recruiting'].includes(c.status)) throw conflict('This campaign can’t take a new hold');
       await expireStale(db);
       const { rows: active } = await db.query(`SELECT 1 FROM bookings WHERE campaign_id = $1 AND status IN ${ACTIVE_BOOKING}`, [c.id]);
       if (active.length) throw conflict('This campaign already holds a booth');
+      // A brand can't tie up the studio with unlimited holds.
+      const { rows: [{ n }] } = await db.query(`SELECT count(*)::int AS n FROM bookings b JOIN campaigns c2 ON c2.id = b.campaign_id WHERE c2.org_id = $1 AND b.status = 'hold'`, [m.orgId]);
+      if (n >= (await setting(db, 'max_active_holds_per_brand'))) throw conflict('Too many open holds. Confirm or release some first.', 'too_many_holds');
       const booth = await one(db, `SELECT b.*, l.status AS location_status FROM booths b JOIN locations l ON l.id = b.location_id WHERE b.id = $1`, [req.body.boothId], 'Booth not found');
       if (booth.status !== 'available') throw conflict(`${booth.name} is not available (${booth.status})`);
       if (booth.location_status === 'closed') throw conflict('This location is closed');
@@ -298,6 +306,7 @@ export default async function catalog(app) {
       const { m, c } = await brandCampaign(db, req, req.params.id, true);
       if (m.orgStatus !== 'verified') throw conflict('Verify your company before inviting sellers', 'brand_not_verified');
       if (!['published', 'recruiting'].includes(c.status)) throw conflict('Publish the campaign before inviting sellers');
+      await assertNotBooked(db, c.id);
       await one(db, 'SELECT 1 FROM seller_profiles WHERE user_id = $1 AND NOT paused', [req.body.sellerId], 'Seller not found');
       const exp = await setting(db, 'invite_expiry_hours');
       const { rows: [i] } = await db.query(
@@ -341,9 +350,16 @@ export default async function catalog(app) {
     });
   });
 
+  /** Once both sides have signed, the seller is booked: no other acceptance may void that contract. */
+  async function assertNotBooked(db, campaignId) {
+    const { rows } = await db.query('SELECT 1 FROM contracts WHERE campaign_id = $1 AND NOT void AND brand_signed_at IS NOT NULL AND seller_signed_at IS NOT NULL', [campaignId]);
+    if (rows.length) throw conflict('A seller is already booked for this campaign', 'already_booked');
+  }
+
   /** Accepting creates the contract from campaign terms + agreed invitation terms. */
   async function acceptInto(db, req, i, terms) {
     const c = await one(db, 'SELECT * FROM campaigns WHERE id = $1 FOR UPDATE', [i.campaign_id]);
+    await assertNotBooked(db, c.id);
     const seller = await one(db, 'SELECT * FROM seller_profiles WHERE user_id = $1', [i.seller_id]);
     if (!seller.identity_verified || !seller.payout_verified) throw conflict('The seller must finish identity and payout setup before accepting a paid job', 'seller_not_verified');
     const { rows: missing } = await db.query(`SELECT rc FROM unnest($1::text[]) rc WHERE rc NOT IN (SELECT course FROM certificates WHERE user_id = $2 AND (expires_at IS NULL OR expires_at > now()))`, [c.required_courses, i.seller_id]);

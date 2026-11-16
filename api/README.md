@@ -41,7 +41,7 @@ The tests reproduce the blueprint example: $6,000 GMV, 4 refunds → eligible $5
 |---|---|
 | Auth and account | `POST /auth/signup` (brand, seller or staff) · `POST /auth/login` · `POST /auth/logout` · `GET /me` |
 | Organization | `GET /orgs/current` · `GET/POST /orgs/current/members` · `PATCH/DELETE /orgs/current/members/:userId` · `GET/POST /orgs/current/verification` |
-| Seller | `GET/PUT /seller/profile` · `POST /academy/:course/assessment` · `GET /seller/invitations` · `GET /seller/earnings` · `GET /seller/payouts` · `GET /jobs` · `POST /jobs/:campaignId/apply` |
+| Seller | `GET/PUT /seller/profile` · `GET /academy/courses` · `GET/POST /academy/:course/assessment` (server-graded answers; 24 h retake wait) · `GET /seller/invitations` · `GET /seller/earnings` · `GET /seller/payouts` · `GET /jobs` · `POST /jobs/:campaignId/apply` |
 | Discovery | `GET /sellers` (filters: category, language, minGmvPerHourCents, verifiedOnly) · `GET /sellers/:id` |
 | Products | `POST/GET /products` · `GET/PATCH /products/:id` · `POST /products/:id/submit` · `POST /products/:id/archive` |
 | Campaigns | `POST/GET /campaigns` · `GET/PATCH /campaigns/:id` · `POST /campaigns/:id/publish` · `/approve` · `/decline` · `/cancel` (quote, then confirm) · `/hold` · `GET /campaigns/:id/report` |
@@ -52,9 +52,20 @@ The tests reproduce the blueprint example: $6,000 GMV, 4 refunds → eligible $5
 | Samples | `POST/GET /bookings/:id/shipments` · `POST /shipments/:id/receive` · `POST/GET /bookings/:id/samples` |
 | Results and finance | `POST /bookings/:id/results` (order CSV) · `POST /bookings/:id/refunds` (refund CSV) · `GET /bookings/:id/settlement` · `POST /bookings/:id/lock` · `GET /finance/overview` |
 | Invoices | `GET /invoices` · `GET /invoices/:id` · `POST /invoices/:id/paid` · `/payment-failed` · `/credit-note` · `POST /invoices/sweep-overdue` |
-| Ledger and payouts | `GET /ledger` · `POST /ledger/adjustments` · `POST /payout-runs` · `POST /payout-runs/:id/approve` · `/execute` · `POST /payouts/:id/retry` |
+| Ledger and payouts | `GET /ledger` · `POST /ledger/adjustments` (over $100: pending until `POST /ledger/adjustments/:id/approve` by a different person) · `POST /payout-runs` · `POST /payout-runs/:id/approve` · `/execute` · `POST /payouts/:id/retry` |
 | Disputes | `POST/GET /disputes` · `GET /disputes/:id` · `POST /disputes/:id/evidence` · `/decide` |
 | Admin | `GET /admin/verifications` · `POST /admin/verifications/:id/decision` · `GET /admin/products` · `POST /admin/products/:id/decision` · `POST/GET /admin/orgs` · `POST /admin/orgs/:id/members` · `/suspend` · `GET /admin/users` · `POST /admin/users/:id/lock` · `POST /admin/sellers/:id/provider-status` · `GET/PUT /admin/flags` · `GET/PUT /admin/settings` · `GET /admin/audit` |
+
+## Security rules
+
+- Academy checks are graded on the server; the answer key never leaves it.
+- A suspended organization is read-only for all its members.
+- Finance records (invoices, ledger, payouts, disputes) are scoped to the Creator Hub organization that ran the booking.
+- Two-person control: large ledger adjustments and large payout runs need a second person approving with their own login.
+- Payout runs are serialized per organization and lock the ledger lines they claim, so a line can't be paid twice.
+- A brand’s dispute holds at most the seller’s unpaid pay for that session; one open dispute per session and type; disputes close 7 days after lock.
+- A fully signed booking can’t be replaced by another acceptance.
+- Error responses carry no database detail. Known gap: sign-up still says when an email already has an account; closing it needs email verification.
 
 ## Simulated in development
 

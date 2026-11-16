@@ -1,12 +1,12 @@
 // Accounts, organizations, members, verification, seller profiles, academy, notifications and the admin console
 // (blueprint B01–B03, B18, C01–C04, C07, C27, A01–A04, A09–A12).
 import { tx } from '../db.js';
+import { COURSES, PASS_PCT, RETAKE_WAIT_HOURS, grade } from '../academy.js';
 import { HttpError, audit, bad, body, checkPassword, conflict, forbidden, hashPassword, member, newToken, notify, notFound, one, orgUsers, sha256, superAdmin, user, BRAND } from '../http.js';
 
 const SESSION_DAYS = 30;
 const BRAND_ROLES = ['brand_owner', 'brand_marketing_manager'];
 const OPS_ROLES = ['location_manager', 'producer', 'inventory', 'finance_admin'];
-const PASS_MARK = 80;
 
 async function startSession(db, userId) {
   const token = newToken();
@@ -175,15 +175,36 @@ export default async function identity(app) {
     return { ...p, ...v };
   });
 
-  app.post('/academy/:course/assessment', { schema: body({ score: { type: 'integer', minimum: 0, maximum: 100 } }) }, async (req) => {
+  app.get('/academy/courses', async () => Object.entries(COURSES).map(([id, c]) => ({ id, title: c.title, questions: c.questions.length, passPct: PASS_PCT })));
+
+  // Questions and options only; the answer key never leaves the server.
+  app.get('/academy/:course/assessment', async (req) => {
+    user(req);
+    const c = COURSES[req.params.course];
+    if (!c) throw notFound('Unknown course');
+    return { course: req.params.course, title: c.title, passPct: PASS_PCT, questions: c.questions.map(({ q, options }) => ({ q, options })) };
+  });
+
+  app.post('/academy/:course/assessment', { schema: body({ answers: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 20 }, maxItems: 100 } }) }, async (req) => {
     const u = user(req);
-    await one(pool, 'SELECT 1 FROM seller_profiles WHERE user_id = $1', [u.id], 'This account has no seller profile');
-    if (req.body.score < PASS_MARK) return { passed: false, score: req.body.score, passMark: PASS_MARK, retakeAfterHours: 24 };
-    // ponytail: no attempt history, so the 24-hour retake wait isn't enforced yet; add an attempts table when it matters.
-    await pool.query(
-      `INSERT INTO certificates (user_id, course, score, expires_at) VALUES ($1, $2, $3, now() + interval '12 months')
-       ON CONFLICT (user_id, course) DO UPDATE SET score = EXCLUDED.score, passed_at = now(), expires_at = EXCLUDED.expires_at`, [u.id, req.params.course, req.body.score]);
-    return { passed: true, score: req.body.score, course: req.params.course };
+    const course = req.params.course;
+    if (!COURSES[course]) throw notFound('Unknown course');
+    return tx(pool, async (db) => {
+      await one(db, 'SELECT 1 FROM seller_profiles WHERE user_id = $1 FOR UPDATE', [u.id], 'This account has no seller profile');
+      const { rows: [last] } = await db.query('SELECT passed, at FROM assessment_attempts WHERE user_id = $1 AND course = $2 ORDER BY at DESC LIMIT 1', [u.id, course]);
+      if (last && !last.passed && Date.now() - last.at.getTime() < RETAKE_WAIT_HOURS * 3.6e6) {
+        throw conflict(`You can retake this check after ${new Date(last.at.getTime() + RETAKE_WAIT_HOURS * 3.6e6).toISOString()}`, 'retake_wait');
+      }
+      const g = grade(course, req.body.answers);
+      if (!g) throw bad(`Answer all ${COURSES[course].questions.length} questions`);
+      await db.query('INSERT INTO assessment_attempts (user_id, course, score, passed) VALUES ($1, $2, $3, $4)', [u.id, course, g.score, g.passed]);
+      if (g.passed) {
+        await db.query(
+          `INSERT INTO certificates (user_id, course, score, expires_at) VALUES ($1, $2, $3, CASE WHEN $4::int IS NULL THEN NULL ELSE now() + make_interval(months => $4::int) END)
+           ON CONFLICT (user_id, course) DO UPDATE SET score = EXCLUDED.score, passed_at = now(), expires_at = EXCLUDED.expires_at`, [u.id, course, g.score, COURSES[course].validMonths]);
+      }
+      return { course, ...g, passPct: PASS_PCT, ...(g.passed ? {} : { retakeAfterHours: RETAKE_WAIT_HOURS }) };
+    });
   });
 
   app.get('/sellers', async (req) => {

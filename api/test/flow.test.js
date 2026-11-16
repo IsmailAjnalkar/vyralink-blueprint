@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
 import { buildApp } from '../src/app.js';
+import { COURSES } from '../src/academy.js';
 import { migrate } from '../src/db.js';
 
 const BASE = process.env.TEST_DB_BASE ?? 'postgres://postgres:postgres@127.0.0.1:5441';
@@ -20,7 +21,6 @@ async function ok(method, url, opts, expect = [200, 201]) {
   assert.ok([].concat(expect).includes(r.status), `${method} ${url} → ${r.status} ${JSON.stringify(r.body)}`);
   return r.body;
 }
-const sum = (rows, f = () => true) => rows.filter(f).reduce((s, r) => s + r.amount_cents, 0);
 
 before(async () => {
   const admin = new pg.Client({ connectionString: `${BASE}/postgres` });
@@ -108,8 +108,15 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   assert.equal((await call('POST', `/invitations/${inv.id}/accept`, { as: 'sarah' })).body.code, 'seller_not_verified');
   await ok('POST', `/admin/sellers/${id.sarah}/provider-status`, { as: 'taylor', body: { identityVerified: true, payoutVerified: true, taxFormOnFile: true } });
   assert.equal((await call('POST', `/invitations/${inv.id}/accept`, { as: 'sarah' })).body.code, 'training_missing');
-  assert.equal((await ok('POST', '/academy/beauty_claims/assessment', { as: 'sarah', body: { score: 60 } })).passed, false);
-  assert.equal((await ok('POST', '/academy/beauty_claims/assessment', { as: 'sarah', body: { score: 90 } })).passed, true);
+  // The server grades: a self-reported score is rejected, wrong answers fail, and a failed check can't be retaken for 24 h.
+  assert.equal((await call('POST', '/academy/beauty_claims/assessment', { as: 'sarah', body: { score: 100 } })).status, 400);
+  const quiz = await ok('GET', '/academy/beauty_claims/assessment', { as: 'sarah' });
+  assert.ok(quiz.questions.every((q) => q.answer === undefined)); // answer key never sent
+  const key = (c) => COURSES[c].questions.map((q) => q.answer);
+  const wrong = (c) => COURSES[c].questions.map((q) => (q.answer + 1) % q.options.length);
+  assert.equal((await ok('POST', '/academy/tiktok_shop_tools/assessment', { as: 'sarah', body: { answers: wrong('tiktok_shop_tools') } })).passed, false);
+  assert.equal((await call('POST', '/academy/tiktok_shop_tools/assessment', { as: 'sarah', body: { answers: key('tiktok_shop_tools') } })).body.code, 'retake_wait');
+  assert.equal((await ok('POST', '/academy/beauty_claims/assessment', { as: 'sarah', body: { answers: key('beauty_claims') } })).passed, true);
   await ok('POST', `/invitations/${inv.id}/counter`, { as: 'sarah', body: { baseRateCents: 3500, message: 'Saturday evening' } });
   await ok('POST', `/invitations/${inv.id}/respond`, { ...brand, body: { accept: false, baseRateCents: 3000 } });
   const accepted = await ok('POST', `/invitations/${inv.id}/accept`, { as: 'sarah' });
@@ -118,6 +125,9 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   await ok('POST', `/contracts/${id.contract}/sign`, { ...brand, body: { typedName: 'Maya Chen' } });
   const signed = await ok('POST', `/contracts/${id.contract}/sign`, { as: 'sarah', body: { typedName: 'Sarah Johnson' } });
   assert.deepEqual(signed, { brandSigned: true, sellerSigned: true });
+  // A signed booking can't be overwritten by inviting someone else.
+  const priya = await signup('priya', 'seller', 'Priya Nair');
+  assert.equal((await call('POST', `/campaigns/${camp.id}/invitations`, { ...brand, body: { sellerId: priya.user.id } })).body.code, 'already_booked');
 
   // ---- studio confirmation needs a producer (BF08, BF10)
   assert.equal((await call('POST', `/bookings/${id.booking}/confirm`, rosa)).body.code, 'no_producer');
@@ -158,7 +168,11 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   const st = await ok('GET', `/bookings/${id.booking}/settlement`, brand);
   assert.deepEqual([st.gmvCents, st.eligibleCents, st.commissionCents, st.bonusCents, st.performanceFeeCents], [600000, 584000, 29200, 10000, 40880]);
   const sellerView = await ok('GET', `/bookings/${id.booking}/settlement`, { as: 'sarah' });
-  assert.equal(sellerView.performanceFeeCents, undefined); // sellers don't see brand fees
+  assert.equal(sellerView.performanceFeeCents, undefined); // sellers don't see brand fees…
+  assert.equal(sellerView.terms.performance_fee_bps, undefined); // …in amounts or in terms
+  assert.equal(sellerView.terms.production_fee_cents, undefined);
+  const detail = await ok('GET', `/campaigns/${camp.id}`, brand);
+  assert.equal(detail.bookings[0].checkin_code, undefined); // the check-in code is for the seller and studio only
 
   // ---- lock waits for the returns window (BF16)
   assert.equal((await call('POST', `/bookings/${id.booking}/lock`, { as: 'alex', org: id.ops })).body.code, 'returns_window_open');
@@ -179,28 +193,38 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   assert.equal(report.results.gmvPerHourCents, 200000);
   assert.equal(report.final, true);
 
-  // ---- payout run, one approver under the threshold, provider success (BF18)
-  const run = await ok('POST', '/payout-runs', { as: 'alex', org: id.ops });
-  assert.equal(run.payouts[0].amount_cents, 9000 + 29200 + 10000 - 200);
-  await ok('POST', `/payout-runs/${run.run.id}/approve`, { as: 'alex', org: id.ops });
-  const exec = await ok('POST', `/payout-runs/${run.run.id}/execute`, { as: 'alex', org: id.ops, body: {} });
-  assert.deepEqual([exec.paid, exec.failed], [1, 0]);
-  const earnings = await ok('GET', '/seller/earnings', { as: 'sarah' });
-  assert.equal(earnings.paidCents, 48000);
-
-  // ---- disputes: seller claim (no hold), brand claim (holds only the disputed part)
+  // ---- disputes: seller claim (no hold), brand claim (holds only the disputed part, at most what's unpaid)
   const d1 = await ok('POST', '/disputes', { as: 'sarah', body: { type: 'attribution', bookingId: id.booking, amountCents: 400, claim: 'I counted 152 orders' } });
   await ok('POST', `/disputes/${d1.id}/decide`, { as: 'taylor', body: { decision: 'Orders after 10 PM were not attributed to the LIVE', outcomeCents: 0 } });
   const d2 = await ok('POST', '/disputes', { ...brand, body: { type: 'deliverables', bookingId: id.booking, amountCents: 5000, claim: 'Demo cadence missed' } });
+  assert.equal(d2.heldCents, 5000);
+  assert.equal((await call('POST', '/disputes', { ...brand, body: { type: 'deliverables', bookingId: id.booking, amountCents: 5000, claim: 'Again' } })).body.code, 'dispute_open');
   assert.equal((await ok('GET', `/campaigns/${camp.id}`, brand)).status, 'disputed');
   assert.equal((await ok('GET', '/seller/earnings', { as: 'sarah' })).onHoldCents, 5000);
+  assert.equal((await call('POST', `/disputes/${d2.id}/decide`, { as: 'taylor', body: { decision: 'Too much', outcomeCents: 9000 } })).status, 400); // can't take more than was held
   await ok('POST', `/disputes/${d2.id}/decide`, { as: 'taylor', body: { decision: 'Partly upheld', outcomeCents: 2000 } });
-  const ledger = await ok('GET', `/ledger?sellerId=${id.sarah}`, { as: 'alex', org: id.ops });
-  assert.equal(sum(ledger, (l) => l.status === 'locked'), -2000); // held −5000 + released +5000 − 2000 outcome
   assert.equal((await ok('GET', `/campaigns/${camp.id}`, brand)).status, 'completed');
 
+  // ---- payout run, one approver under the threshold, provider success (BF18)
+  const run = await ok('POST', '/payout-runs', { as: 'alex', org: id.ops });
+  assert.equal(run.payouts[0].amount_cents, 9000 + 29200 + 10000 - 200 - 2000); // held −5000, released +5000, outcome −2000
+  assert.equal((await ok('POST', '/payout-runs', { as: 'alex', org: id.ops })).run, null); // nothing left to pay twice
+  await ok('POST', `/payout-runs/${run.run.id}/approve`, { as: 'alex', org: id.ops });
+  const exec = await ok('POST', `/payout-runs/${run.run.id}/execute`, { as: 'alex', org: id.ops, body: {} });
+  assert.deepEqual([exec.paid, exec.failed], [1, 0]);
+  assert.equal((await ok('GET', '/seller/earnings', { as: 'sarah' })).paidCents, 46000);
+
+  // ---- a paid-out session leaves nothing to hold
+  await pool.query(`UPDATE disputes SET status = 'decided' WHERE booking_id = $1`, [id.booking]);
+  assert.equal((await ok('POST', '/disputes', { ...brand, body: { type: 'deliverables', bookingId: id.booking, amountCents: 5000, claim: 'Late claim' } })).heldCents, 0);
+
+  // ---- large adjustments need a second person, approving with their own login
+  const adj = await ok('POST', '/ledger/adjustments', { as: 'alex', org: id.ops, body: { bookingId: id.booking, amountCents: 600000, reason: 'Test: large goodwill' } });
+  assert.equal(adj.status, 'pending_approval');
+  assert.equal((await call('POST', `/ledger/adjustments/${adj.id}/approve`, { as: 'alex', org: id.ops })).body.code, 'same_approver');
+  assert.equal((await ok('POST', `/ledger/adjustments/${adj.id}/approve`, { as: 'bea', org: id.ops })).status, 'locked');
+
   // ---- big payout runs need two different approvers
-  await ok('POST', '/ledger/adjustments', { as: 'alex', org: id.ops, body: { sellerId: id.sarah, amountCents: 600000, reason: 'Test: large goodwill', approverId: (await ok('GET', '/orgs/current/members', rosa)).find((m) => m.name === 'Bea Second').id } });
   const big = await ok('POST', '/payout-runs', { as: 'alex', org: id.ops });
   assert.equal((await ok('POST', `/payout-runs/${big.run.id}/approve`, { as: 'alex', org: id.ops })).status, 'draft');
   assert.equal((await call('POST', `/payout-runs/${big.run.id}/approve`, { as: 'alex', org: id.ops })).body.code, 'same_approver');
@@ -223,4 +247,16 @@ test('permissions: unauthenticated, wrong org, wrong role', async () => {
   assert.equal((await call('GET', `/campaigns/${id.campaign}`, { as: 'rosa', org: id.ops })).status, 403);
   assert.equal((await call('GET', '/admin/orgs', { as: 'maya' })).status, 403);
   assert.equal((await call('DELETE', `/orgs/current/members/${(await ok('GET', '/me', { as: 'maya' })).user.id}`, { as: 'maya', org: id.brand })).body.code, 'last_owner');
+  // database detail never leaks in errors
+  const dup = await call('POST', '/auth/signup', { body: { email: 'maya@example.com', password: 'correct-horse-battery', name: 'Again', kind: 'seller' } });
+  assert.deepEqual([dup.status, dup.body.detail], [409, undefined]);
+});
+
+test('suspended organizations are read-only', async () => {
+  const shady = await signup('shady', 'brand', 'Shady Owner', { companyName: 'Shady Co' });
+  await ok('POST', `/admin/orgs/${shady.orgId}/suspend`, { as: 'taylor', body: { reason: 'Fraud review' } });
+  const asShady = { as: 'shady', org: shady.orgId };
+  assert.equal((await call('POST', '/products', { ...asShady, body: { name: 'X', sku: 'X-1', priceCents: 100, category: 'misc' } })).status, 403);
+  assert.equal((await call('POST', '/orgs/current/verification', { ...asShady, body: { details: {}, documents: [{ type: 'id', fileName: 'id.pdf' }] } })).status, 403);
+  assert.equal((await call('GET', '/orgs/current', asShady)).status, 200);
 });

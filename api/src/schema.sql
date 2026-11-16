@@ -67,6 +67,16 @@ CREATE TABLE IF NOT EXISTS seller_profiles (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Every graded attempt (pass or fail): enforces the 24-hour retake wait.
+CREATE TABLE IF NOT EXISTS assessment_attempts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users ON DELETE CASCADE,
+  course text NOT NULL,
+  score int NOT NULL,
+  passed boolean NOT NULL,
+  at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS certificates (
   user_id uuid NOT NULL REFERENCES users ON DELETE CASCADE,
   course text NOT NULL,
@@ -310,6 +320,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS invoices_one_per_booking_kind ON invoices (boo
 
 CREATE TABLE IF NOT EXISTS payout_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES orgs,
   status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'executed')),
   total_cents int NOT NULL DEFAULT 0,
   approvals uuid[] NOT NULL DEFAULT '{}',
@@ -336,7 +347,7 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   kind text NOT NULL CHECK (kind IN ('base', 'commission', 'bonus', 'adjustment')),
   basis text NOT NULL,
   amount_cents int NOT NULL,
-  status text NOT NULL CHECK (status IN ('provisional', 'locked', 'scheduled', 'paid', 'on_hold')),
+  status text NOT NULL CHECK (status IN ('pending_approval', 'provisional', 'locked', 'scheduled', 'paid', 'on_hold')),
   payout_id uuid REFERENCES payouts,
   reason text,
   created_by uuid REFERENCES users,
@@ -414,7 +425,9 @@ INSERT INTO settings (key, value) VALUES
   ('approval_threshold_cents', '100000'),   -- campaigns over $1,000 need Brand Owner approval
   ('payout_two_approval_cents', '500000'),  -- TODO: blueprint placeholder [N]
   ('adjustment_approval_cents', '10000'),   -- ledger adjustments over $100 need a second approver
-  ('invoice_due_days', '15')
+  ('invoice_due_days', '15'),
+  ('max_active_holds_per_brand', '10'),     -- stops one brand tying up booths with holds
+  ('dispute_window_days', '7')              -- disputes open up to 7 days after results lock
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO feature_flags (key, phase) VALUES
