@@ -22,8 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: "${{ env.NODE_VERSION }}", cache: npm }
       - run: npm ci
       - run: npm run typecheck -w @vyralink/api
@@ -46,8 +46,8 @@ jobs:
     env:
       TEST_DB_BASE: postgres://postgres:postgres@127.0.0.1:5432
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: "${{ env.NODE_VERSION }}", cache: npm }
       - run: npm ci
       - run: npm test -w @vyralink/api
@@ -66,8 +66,8 @@ jobs:
     env:
       E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/vyralink_e2e
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: "${{ env.NODE_VERSION }}", cache: npm }
       - run: npm ci
       - run: npx playwright install --with-deps chromium
@@ -75,7 +75,7 @@ jobs:
         working-directory: apps/web
       - run: npm run test:e2e
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with: { name: e2e-results, path: test-results, retention-days: 7 }
 
   docker:
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker build --target api -t vyralink-api .
       - run: docker build --target worker -t vyralink-worker .
       - run: docker build --target web -t vyralink-web .
