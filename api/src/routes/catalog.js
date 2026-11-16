@@ -255,7 +255,8 @@ export default async function catalog(app) {
       await expireStale(db);
       const { rows: active } = await db.query(`SELECT 1 FROM bookings WHERE campaign_id = $1 AND status IN ${ACTIVE_BOOKING}`, [c.id]);
       if (active.length) throw conflict('This campaign already holds a booth');
-      // A brand can't tie up the studio with unlimited holds.
+      // A brand can't tie up the studio with unlimited holds. The per-brand lock makes count-then-insert safe under concurrent requests.
+      await db.query(`SELECT pg_advisory_xact_lock(hashtext('holds:' || $1::text))`, [m.orgId]);
       const { rows: [{ n }] } = await db.query(`SELECT count(*)::int AS n FROM bookings b JOIN campaigns c2 ON c2.id = b.campaign_id WHERE c2.org_id = $1 AND b.status = 'hold'`, [m.orgId]);
       if (n >= (await setting(db, 'max_active_holds_per_brand'))) throw conflict('Too many open holds. Confirm or release some first.', 'too_many_holds');
       const booth = await one(db, `SELECT b.*, l.status AS location_status FROM booths b JOIN locations l ON l.id = b.location_id WHERE b.id = $1`, [req.body.boothId], 'Booth not found');

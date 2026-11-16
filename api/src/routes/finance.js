@@ -243,19 +243,24 @@ export default async function finance(app) {
     return tx(pool, async (db) => {
       let bk = null;
       let heldCents = 0;
+      // Only the records that were authorized are stored on the dispute.
+      let bookingId = null;
+      let invoiceId = null;
       if (['invoice', 'cancellation_fee'].includes(b.type)) {
         if (!b.invoiceId) throw bad('Say which invoice');
         const inv = await one(db, 'SELECT * FROM invoices WHERE id = $1 FOR UPDATE', [b.invoiceId], 'Invoice not found');
         if (req.membership?.orgId !== inv.org_id || !BRAND.includes(req.membership.role)) throw notFound('Invoice not found');
-        member(req, BRAND); // suspended organizations can't open disputes
+        if (b.bookingId && b.bookingId !== inv.booking_id) throw bad('That session doesn’t belong to this invoice');
         assertMove('invoice', inv.status, 'disputed');
         await db.query(`UPDATE invoices SET status = 'disputed' WHERE id = $1`, [inv.id]); // amount paused, not cancelled
+        [bookingId, invoiceId] = [inv.booking_id, inv.id];
       } else {
         if (!b.bookingId) throw bad('Say which session');
+        if (b.invoiceId) throw bad('Session disputes don’t take an invoice; open an invoice dispute instead');
         bk = await one(db, `SELECT b.*, c.org_id AS brand_org, c.status AS campaign_status FROM bookings b JOIN campaigns c ON c.id = b.campaign_id WHERE b.id = $1 FOR UPDATE OF b`, [b.bookingId], 'Booking not found');
         const asBrand = req.membership?.orgId === bk.brand_org && BRAND.includes(req.membership.role);
         if (!asBrand && bk.seller_id !== u.id) throw notFound('Booking not found');
-        if (asBrand) member(req, BRAND);
+        bookingId = bk.id;
         if (bk.status !== 'completed') throw conflict('Disputes open after the session is completed');
         const windowDays = await setting(db, 'dispute_window_days');
         if (bk.locked_at && Date.now() - bk.locked_at.getTime() > windowDays * 864e5) throw conflict(`Disputes close ${windowDays} days after results lock`, 'dispute_window_closed');
@@ -267,7 +272,7 @@ export default async function finance(app) {
           heldCents = Math.min(b.amountCents, Math.max(0, unpaid));
         }
       }
-      const { rows: [d] } = await db.query('INSERT INTO disputes (type, opened_by, booking_id, invoice_id, amount_cents, claim) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *', [b.type, u.id, b.bookingId ?? null, b.invoiceId ?? null, b.amountCents, b.claim]);
+      const { rows: [d] } = await db.query('INSERT INTO disputes (type, opened_by, booking_id, invoice_id, amount_cents, claim) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *', [b.type, u.id, bookingId, invoiceId, b.amountCents, b.claim]);
       if (heldCents > 0) {
         await db.query(`INSERT INTO ledger_entries (seller_id, booking_id, kind, basis, amount_cents, status, reason, created_by) VALUES ($1, $2, 'adjustment', $3, $4, 'locked', $5, $6), ($1, $2, 'adjustment', $3, $7, 'on_hold', $5, $6)`,
           [bk.seller_id, bk.id, 'Held while dispute is open', -heldCents, `dispute_hold:${d.id}`, u.id, heldCents]);

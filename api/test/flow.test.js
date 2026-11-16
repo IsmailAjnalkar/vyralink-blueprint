@@ -193,6 +193,11 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   assert.equal(report.results.gmvPerHourCents, 200000);
   assert.equal(report.final, true);
 
+  // ---- disputes store only what was authorized
+  const prodInvoice = invoices.find((i) => i.kind === 'production');
+  assert.equal((await call('POST', '/disputes', { ...brand, body: { type: 'invoice', invoiceId: prodInvoice.id, bookingId: '00000000-0000-4000-8000-000000000000', amountCents: 100, claim: 'x' } })).status, 400);
+  assert.equal((await call('POST', '/disputes', { as: 'sarah', body: { type: 'commission', bookingId: id.booking, invoiceId: prodInvoice.id, amountCents: 100, claim: 'x' } })).status, 400);
+
   // ---- disputes: seller claim (no hold), brand claim (holds only the disputed part, at most what's unpaid)
   const d1 = await ok('POST', '/disputes', { as: 'sarah', body: { type: 'attribution', bookingId: id.booking, amountCents: 400, claim: 'I counted 152 orders' } });
   await ok('POST', `/disputes/${d1.id}/decide`, { as: 'taylor', body: { decision: 'Orders after 10 PM were not attributed to the LIVE', outcomeCents: 0 } });
@@ -259,4 +264,9 @@ test('suspended organizations are read-only', async () => {
   assert.equal((await call('POST', '/products', { ...asShady, body: { name: 'X', sku: 'X-1', priceCents: 100, category: 'misc' } })).status, 403);
   assert.equal((await call('POST', '/orgs/current/verification', { ...asShady, body: { details: {}, documents: [{ type: 'id', fileName: 'id.pdf' }] } })).status, 403);
   assert.equal((await call('GET', '/orgs/current', asShady)).status, 200);
+  // The gate sits before every handler, so routes that don't use member() are covered too.
+  const msg = await call('POST', `/campaigns/${id.campaign}/messages`, { ...asShady, body: { body: 'hi' } });
+  assert.deepEqual([msg.status, msg.body.code], [403, 'org_suspended']);
+  const sign = await call('POST', `/contracts/${id.contract}/sign`, { ...asShady, body: { typedName: 'x' } });
+  assert.deepEqual([sign.status, sign.body.code], [403, 'org_suspended']);
 });

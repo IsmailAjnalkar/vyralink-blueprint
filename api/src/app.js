@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { sha256 } from './http.js';
+import { HttpError, sha256 } from './http.js';
 import identity from './routes/identity.js';
 import catalog from './routes/catalog.js';
 import studio from './routes/studio.js';
@@ -25,6 +25,8 @@ export function buildApp({ pool, logger = false }) {
       const { rows } = await pool.query(
         `SELECT m.org_id, m.role, o.kind, o.status FROM memberships m JOIN orgs o ON o.id = m.org_id WHERE m.org_id = $1 AND m.user_id = $2`, [orgId, req.user.id]);
       if (rows[0]) req.membership = { orgId: rows[0].org_id, role: rows[0].role, kind: rows[0].kind, orgStatus: rows[0].status };
+      // A suspended organization is read-only for every member, on every route (one gate, before any handler).
+      if (rows[0]?.status === 'suspended' && req.method !== 'GET') throw new HttpError(403, 'This organization is suspended. Contact support.', 'org_suspended');
     }
   });
 
