@@ -11,6 +11,18 @@ const LOGOUT_ROUTES = new Set(["auth/logout", "auth/logout-all"]);
 const FORWARD_REQUEST = ["content-type", "user-agent", "accept"];
 const FORWARD_RESPONSE = ["content-type", "cache-control", "retry-after"];
 
+/**
+ * The caller's real address. The Next.js server appends the connecting peer to X-Forwarded-For, so entries are
+ * counted from the right: skip TRUSTED_PROXY_HOPS entries added by our own proxies in front of this app (0 when
+ * the app is reached directly). Anything further left was written by the client and is ignored, so the API's
+ * per-IP rate limits can't be dodged with a forged header.
+ */
+function clientIp(req: NextRequest): string {
+  const chain = (req.headers.get("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const hops = Number(process.env.TRUSTED_PROXY_HOPS ?? 0);
+  return chain.length ? chain[Math.max(0, chain.length - 1 - hops)] : "127.0.0.1";
+}
+
 async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
   const route = path.join("/");
@@ -31,8 +43,7 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   if (session) headers.set("authorization", `Bearer ${session}`);
   const org = req.headers.get("x-org-id") ?? jar.get(ORG_COOKIE)?.value;
   if (org) headers.set("x-org-id", org);
-  const fwd = req.headers.get("x-forwarded-for");
-  headers.set("x-forwarded-for", fwd ? fwd.split(",")[0].trim() : "127.0.0.1");
+  headers.set("x-forwarded-for", clientIp(req));
 
   const body = ["GET", "HEAD"].includes(req.method) ? undefined : await req.text();
   const upstream = await fetch(`${API_URL}/v1/${route}${req.nextUrl.search}`, { method: req.method, headers, body, cache: "no-store" });

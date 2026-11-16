@@ -13,6 +13,17 @@ npm start -w @vyralink/worker   # jobs + email outbox (.dev-mail/)
 npm run dev:web        # web  http://localhost:3020
 ```
 
+## Client IP and proxies
+
+Per-IP rate limits and the session list depend on the real client address. Count only the proxies you run:
+
+| Variable | Service | Value |
+|---|---|---|
+| `TRUST_PROXY_HOPS` | API | `1` when reached only through the web app (it sets `X-Forwarded-For`), plus one per load balancer in front of the API. `0` if the API is exposed directly. |
+| `TRUSTED_PROXY_HOPS` | web | Number of proxies/load balancers in front of the web app (`0` locally). Client-written `X-Forwarded-For` entries are ignored. |
+
+Verified locally: a sign-in through the proxy carrying a forged `X-Forwarded-For: 6.6.6.6` stored `127.0.0.1` on the session.
+
 ## Planned (Phase 9)
 
 - Dockerfiles for api, web, worker; `docker-compose.yml` with PostgreSQL.
