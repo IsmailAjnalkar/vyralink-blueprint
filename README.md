@@ -5,6 +5,7 @@ Source for the design canvas at https://claude.ai/artifact/U1Tg5eQp1FY9uAq7CC12y
 
 - `project/` — every file on the canvas: `canvas.json` (board index) and the `.dc.html` artboards, plus `handoff/handoff.json` and `handoff/handoff.csv`.
 - `scripts/` — the Node generators that wrote them (no dependencies, Node 22+).
+- `api/` — the MVP backend (123 endpoints) built from the blueprint. See `api/README.md`.
 
 ## Scripts
 

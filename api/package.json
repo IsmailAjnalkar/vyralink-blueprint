@@ -1,0 +1,24 @@
+{
+  "name": "vyralink-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Vyralink + Creator Hub MVP API (built from the blueprint in ../project)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "db:start": "node scripts/dev-db.mjs start",
+    "db:stop": "node scripts/dev-db.mjs stop",
+    "migrate": "node src/migrate.js",
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "fastify": "^5.12.8",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "embedded-postgres": "^18.4.0-beta.17"
+  }
+}
