@@ -2,7 +2,7 @@
 // No escrow: brand charges and seller payouts are separate payment-provider flows; GMV is never revenue.
 // Every finance record is scoped to the Creator Hub organization that ran the booking.
 import { setting, tx } from '../db.js';
-import { audit, bad, body, conflict, member, notify, notFound, one, orgUsers, superAdmin, user, BRAND, BRAND_BILLING } from '../http.js';
+import { audit, bad, body, conflict, member, notify, notFound, one, orgUsers, requireMfa, superAdmin, user, BRAND, BRAND_BILLING } from '../http.js';
 import { loadSettlement, lockResults } from '../settle.js';
 import { assertMove } from '../status.js';
 
@@ -290,16 +290,21 @@ export default async function finance(app) {
     const d = await one(db, `SELECT d.*, b.seller_id, c.org_id AS brand_org, i.org_id AS invoice_org,
         COALESCE(d.booking_id, i.booking_id) AS any_booking FROM disputes d LEFT JOIN bookings b ON b.id = d.booking_id LEFT JOIN campaigns c ON c.id = b.campaign_id LEFT JOIN invoices i ON i.id = d.invoice_id
         WHERE d.id = $1${lock ? ' FOR UPDATE OF d' : ''}`, [req.params.id], 'Dispute not found');
+    // Platform and finance staff count as parties only with a session that passed MFA (same rule as everywhere else).
+    const mfa = Boolean(req.session?.mfaPassed);
     let finance = false;
-    if (req.membership?.role === 'finance_admin') finance = (await db.query(`SELECT ${OWNS('$1::uuid', '$2')} AS ok`, [d.any_booking, req.membership.orgId])).rows[0].ok;
-    const party = u.is_super_admin || d.opened_by === u.id || d.seller_id === u.id || [d.brand_org, d.invoice_org].includes(req.membership?.orgId) || finance;
+    if (req.membership?.role === 'finance_admin' && mfa) finance = (await db.query(`SELECT ${OWNS('$1::uuid', '$2')} AS ok`, [d.any_booking, req.membership.orgId])).rows[0].ok;
+    const party = (u.is_super_admin && mfa) || d.opened_by === u.id || d.seller_id === u.id || [d.brand_org, d.invoice_org].includes(req.membership?.orgId) || finance;
     if (!party) throw notFound('Dispute not found');
     return d;
   }
 
   app.get('/disputes', async (req) => {
     const u = user(req);
-    if (u.is_super_admin) return (await pool.query(`SELECT * FROM disputes WHERE ($1::text IS NULL OR status = $1) ORDER BY created_at`, [req.query.status ?? null])).rows;
+    if (u.is_super_admin) {
+      requireMfa(req);
+      return (await pool.query(`SELECT * FROM disputes WHERE ($1::text IS NULL OR status = $1) ORDER BY created_at`, [req.query.status ?? null])).rows;
+    }
     const m = member(req, FIN);
     return (await pool.query(`SELECT d.* FROM disputes d LEFT JOIN invoices i ON i.id = d.invoice_id WHERE ${OWNS('COALESCE(d.booking_id, i.booking_id)', '$1')} AND ($2::text IS NULL OR d.status = $2) ORDER BY d.created_at`, [m.orgId, req.query.status ?? null])).rows;
   });

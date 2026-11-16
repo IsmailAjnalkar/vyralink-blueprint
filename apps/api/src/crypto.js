@@ -35,11 +35,20 @@ export function totp(secret, unixSeconds = Date.now() / 1000, digits = 6, step =
   const n = ((h[o] & 127) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3];
   return String(n % 10 ** digits).padStart(digits, '0');
 }
-/** Accepts the current code and one step either side (clock drift). Constant-time compare. */
-export function verifyTotp(secret, code, now = Date.now() / 1000) {
-  if (!/^\d{6}$/.test(String(code))) return false;
-  return [-1, 0, 1].some((d) => crypto.timingSafeEqual(Buffer.from(totp(secret, now + d * 30)), Buffer.from(String(code))));
+/**
+ * Returns the matched time step for the current code or one step either side (clock drift), else null.
+ * Steps at or before `afterStep` are refused, so a code works once. Constant-time compare.
+ */
+export function totpStep(secret, code, afterStep = null, now = Date.now() / 1000) {
+  if (!/^\d{6}$/.test(String(code))) return null;
+  for (const d of [-1, 0, 1]) {
+    const step = Math.floor(now / 30) + d;
+    if (afterStep != null && step <= Number(afterStep)) continue;
+    if (crypto.timingSafeEqual(Buffer.from(totp(secret, step * 30)), Buffer.from(String(code)))) return step;
+  }
+  return null;
 }
+export const verifyTotp = (secret, code, now = Date.now() / 1000) => totpStep(secret, code, null, now) != null;
 export const newTotpSecret = () => crypto.randomBytes(20);
 
 function key() {

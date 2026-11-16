@@ -1,6 +1,6 @@
 // Accounts: sign-up with email verification, login with lockout and MFA, password reset, sessions, invitations.
 // Every answer that could reveal whether an email has an account is the same either way.
-import { base32Encode, newTotpSecret, open, seal, verifyTotp } from '../crypto.js';
+import { base32Encode, newTotpSecret, open, seal, totpStep } from '../crypto.js';
 import { setting, tx } from '../db.js';
 import { HttpError, audit, bad, body, checkPassword, conflict, forbidden, hashPassword, member, newToken, notFound, one, sha256, superAdmin, user } from '../http.js';
 import { email, enqueue } from '../jobs.js';
@@ -114,16 +114,28 @@ export default async function auth(app) {
   app.post('/auth/mfa/verify', { config: strict, schema: body({ code: 'string' }) }, async (req) => {
     if (!req.pendingMfa) throw new HttpError(401, 'Sign in with your password first', 'unauthenticated');
     return tx(pool, async (db) => {
-      const u = await one(db, 'SELECT id, mfa_secret_enc FROM users WHERE id = $1 FOR UPDATE', [req.pendingMfa.userId]);
-      if (!verifyTotp(open(u.mfa_secret_enc), req.body.code)) {
-        await db.query('UPDATE users SET failed_logins = failed_logins + 1, locked_until = CASE WHEN failed_logins + 1 >= 5 THEN now() + interval \'15 minutes\' ELSE locked_until END WHERE id = $1', [u.id]);
+      const u = await one(db, 'SELECT id, mfa_secret_enc, mfa_last_step, locked_until FROM users WHERE id = $1 FOR UPDATE', [req.pendingMfa.userId]);
+      if (u.locked_until && u.locked_until > new Date()) {
+        await db.query('DELETE FROM sessions WHERE id = $1', [req.pendingMfa.sessionId]);
+        return { _locked: true };
+      }
+      // A code is accepted once: steps at or before the last accepted one are refused (no replay).
+      const step = totpStep(open(u.mfa_secret_enc), req.body.code, u.mfa_last_step);
+      if (step == null) {
+        const max = await setting(db, 'lockout_after_failures');
+        const minutes = await setting(db, 'lockout_minutes');
+        const { rows: [after] } = await db.query(`UPDATE users SET failed_logins = CASE WHEN failed_logins + 1 >= $2 THEN 0 ELSE failed_logins + 1 END,
+          locked_until = CASE WHEN failed_logins + 1 >= $2 THEN now() + make_interval(mins => $3) ELSE locked_until END WHERE id = $1 RETURNING locked_until`, [u.id, max, minutes]);
+        // Too many wrong codes: the half-signed-in session is destroyed; the password step starts over after the lock.
+        if (after.locked_until && after.locked_until > new Date()) await db.query('DELETE FROM sessions WHERE id = $1', [req.pendingMfa.sessionId]);
         return { _fail: true };
       }
       await db.query(`UPDATE sessions SET pending_mfa = false, mfa_passed = true, expires_at = now() + make_interval(days => $2) WHERE id = $1`, [req.pendingMfa.sessionId, SESSION_DAYS]);
-      await db.query('UPDATE users SET failed_logins = 0 WHERE id = $1', [u.id]);
+      await db.query('UPDATE users SET failed_logins = 0, mfa_last_step = $2 WHERE id = $1', [u.id, step]);
       await audit(db, { user: { id: u.id }, ip: req.ip }, 'user.login', 'user', u.id, { mfa: true });
       return { token: sessionToken(req) };
     }).then((r) => {
+      if (r._locked) throw new HttpError(429, 'Too many failed attempts. Try again later.', 'account_locked');
       if (r._fail) throw new HttpError(401, 'That code is wrong or expired', 'invalid_code');
       return r;
     });
@@ -145,8 +157,9 @@ export default async function auth(app) {
       const row = await one(db, 'SELECT mfa_secret_enc, mfa_enabled_at FROM users WHERE id = $1 FOR UPDATE', [u.id]);
       if (row.mfa_enabled_at) throw conflict('Two-step verification is already on');
       if (!row.mfa_secret_enc) throw conflict('Start setup first');
-      if (!verifyTotp(open(row.mfa_secret_enc), req.body.code)) throw new HttpError(400, 'That code is wrong or expired', 'invalid_code');
-      await db.query('UPDATE users SET mfa_enabled_at = now() WHERE id = $1', [u.id]);
+      const step = totpStep(open(row.mfa_secret_enc), req.body.code);
+      if (step == null) throw new HttpError(400, 'That code is wrong or expired', 'invalid_code');
+      await db.query('UPDATE users SET mfa_enabled_at = now(), mfa_last_step = $2 WHERE id = $1', [u.id, step]);
       await db.query('UPDATE sessions SET mfa_passed = true WHERE id = $1', [req.session.id]);
       await db.query('DELETE FROM sessions WHERE user_id = $1 AND id <> $2', [u.id, req.session.id]); // other devices sign in again with MFA
       await audit(db, req, 'user.mfa_enabled', 'user', u.id);
@@ -231,6 +244,14 @@ export default async function auth(app) {
     return (await pool.query(`SELECT email, role, expires_at, created_at FROM auth_tokens WHERE kind = 'invite' AND org_id = $1 AND used_at IS NULL AND expires_at > now() ORDER BY created_at DESC`, [m.orgId])).rows;
   });
 
+  app.post('/orgs/current/invitations/revoke', { schema: body({ email: EMAIL }) }, async (req) => {
+    const m = member(req);
+    if (!managerRoles(m.kind).includes(m.role)) throw forbidden();
+    const { rowCount } = await pool.query(`UPDATE auth_tokens SET used_at = now() WHERE kind = 'invite' AND org_id = $1 AND lower(email) = lower($2) AND used_at IS NULL`, [m.orgId, req.body.email]);
+    await audit(pool, req, 'member.invitation_revoked', 'org', m.orgId, { email: req.body.email });
+    return { revoked: rowCount };
+  });
+
   app.post('/invitations/preview', { config: strict, schema: body({ token: 'string' }) }, async (req) => {
     const t = await one(pool, `SELECT a.email, a.role, a.expires_at, a.used_at, o.name AS org FROM auth_tokens a JOIN orgs o ON o.id = a.org_id WHERE a.token_hash = $1 AND a.kind = 'invite'`, [sha256(req.body.token)], 'This invitation is invalid');
     return { org: t.org, role: t.role, email: t.email, expired: t.expires_at < new Date(), used: Boolean(t.used_at) };
@@ -242,7 +263,13 @@ export default async function auth(app) {
     return tx(pool, async (db) => {
       const t = await useToken(db, 'invite', req.body.token);
       if (t.email !== u.email.toLowerCase()) throw forbidden(`This invitation is for ${t.email}. Sign in with that account.`);
-      await db.query('INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT (org_id, user_id) DO UPDATE SET role = EXCLUDED.role', [t.org_id, u.id, t.role]);
+      // The inviter must still be a manager of the organization now, not just when they sent it.
+      const org = await one(db, 'SELECT kind FROM orgs WHERE id = $1', [t.org_id], 'This invitation is invalid');
+      const { rows: [inviter] } = await db.query('SELECT role FROM memberships WHERE org_id = $1 AND user_id = $2', [t.org_id, t.created_by]);
+      if (!inviter || !managerRoles(org.kind).includes(inviter.role)) throw conflict('This invitation is no longer valid. Ask the organization for a new one.', 'invitation_revoked');
+      // An invitation adds a member; it never changes an existing member's role (roles change in team settings).
+      const { rowCount } = await db.query('INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT (org_id, user_id) DO NOTHING', [t.org_id, u.id, t.role]);
+      if (!rowCount) throw conflict('You are already a member of this organization', 'already_member');
       await audit(db, { user: u, membership: { orgId: t.org_id }, ip: req.ip }, 'member.joined', 'user', u.id, { role: t.role });
       return { orgId: t.org_id, role: t.role };
     });

@@ -80,17 +80,37 @@ test('MFA: two-step sign-in; the half-signed-in session can do nothing else', as
   const t = await account('mfa@example.com');
   const { secret } = (await call('POST', '/auth/mfa/setup', { token: t })).body;
   assert.equal((await call('POST', '/auth/mfa/enable', { token: t, body: { code: '000000' } })).body.code, 'invalid_code');
-  assert.equal((await call('POST', '/auth/mfa/enable', { token: t, body: { code: totp(base32Decode(secret)) } })).status, 200);
+  const enrollCode = totp(base32Decode(secret));
+  assert.equal((await call('POST', '/auth/mfa/enable', { token: t, body: { code: enrollCode } })).status, 200);
   const step1 = (await call('POST', '/auth/login', { body: { email: 'mfa@example.com', password: PW } })).body;
   assert.equal(step1.mfaRequired, true);
   assert.equal((await call('GET', '/me', { token: step1.token })).status, 401);
   assert.equal((await call('POST', '/auth/mfa/verify', { token: step1.token, body: { code: '123456' } })).status, 401);
-  const step2 = await call('POST', '/auth/mfa/verify', { token: step1.token, body: { code: totp(base32Decode(secret)) } });
+  // The code used to enroll can't be replayed; the next 30-second step's code works (one step of drift allowed).
+  assert.equal((await call('POST', '/auth/mfa/verify', { token: step1.token, body: { code: enrollCode } })).status, 401);
+  const nextStep = totp(base32Decode(secret), (Math.floor(Date.now() / 30000) + 1) * 30);
+  const step2 = await call('POST', '/auth/mfa/verify', { token: step1.token, body: { code: nextStep } });
   assert.equal(step2.status, 200);
   const me = (await call('GET', '/me', { token: step2.body.token })).body;
   assert.deepEqual([me.mfa.enabled, me.mfa.passed], [true, true]);
   const { rows: [u] } = await pool.query(`SELECT mfa_secret_enc FROM users WHERE email = 'mfa@example.com'`);
   assert.ok(!u.mfa_secret_enc.includes(secret)); // stored encrypted, not as the shared secret
+});
+
+test('MFA brute force: wrong codes lock the account and destroy the half-signed-in session', async () => {
+  const t = await account('mfa-brute@example.com');
+  const { secret } = (await call('POST', '/auth/mfa/setup', { token: t })).body;
+  await call('POST', '/auth/mfa/enable', { token: t, body: { code: totp(base32Decode(secret)) } });
+  const pending = (await call('POST', '/auth/login', { body: { email: 'mfa-brute@example.com', password: PW } })).body.token;
+  for (let i = 0; i < 5; i++) await call('POST', '/auth/mfa/verify', { token: pending, body: { code: '000000' } });
+  assert.equal((await call('POST', '/auth/mfa/verify', { token: pending, body: { code: totp(base32Decode(secret)) } })).body.code, 'unauthenticated');
+  assert.equal((await call('POST', '/auth/login', { body: { email: 'mfa-brute@example.com', password: PW } })).body.code, 'account_locked');
+});
+
+test('privileged staff without MFA can’t read disputes either', async () => {
+  const t = await account('admin-nomfa@example.com');
+  await pool.query(`UPDATE users SET is_super_admin = true WHERE email = 'admin-nomfa@example.com'`);
+  assert.equal((await call('GET', '/disputes', { token: t })).body.code, 'mfa_enrollment_required');
 });
 
 test('sessions: list, revoke one, sign out everywhere', async () => {
@@ -118,6 +138,29 @@ test('invitations: only the invited email can accept; managers only', async () =
   assert.equal((await call('GET', '/invoices', { token: invitee, org: orgId })).status, 200);
   assert.equal((await call('GET', '/campaigns', { token: invitee, org: orgId })).status, 403);
   assert.equal((await call('POST', '/orgs/current/invitations', { token: invitee, org: orgId, body: { email: 'x@example.com', role: 'brand_owner' } })).status, 403);
+  // An invitation can't change an existing member's role.
+  await call('POST', '/orgs/current/invitations', { token: owner, org: orgId, body: { email: 'invitee@example.com', role: 'brand_owner' } });
+  assert.equal((await call('POST', '/invitations/accept', { token: invitee, body: { token: tokenIn(await lastEmail('invitee@example.com')) } })).body.code, 'already_member');
+  // Revoked invitations stop working.
+  await call('POST', '/orgs/current/invitations', { token: owner, org: orgId, body: { email: 'late@example.com', role: 'brand_marketing_manager' } });
+  const lateLink = tokenIn(await lastEmail('late@example.com'));
+  assert.equal((await call('POST', '/orgs/current/invitations/revoke', { token: owner, org: orgId, body: { email: 'late@example.com' } })).body.revoked, 1);
+  const late = await account('late@example.com');
+  assert.equal((await call('POST', '/invitations/accept', { token: late, body: { token: lateLink } })).body.code, 'token_used');
+});
+
+test('an invitation dies when its sender is no longer a manager', async () => {
+  const owner = await account('owner2@example.com', 'brand', { companyName: 'Beta' });
+  const orgId = (await call('GET', '/me', { token: owner })).body.memberships[0].org_id;
+  const coOwner = await account('co@example.com');
+  await call('POST', '/orgs/current/invitations', { token: owner, org: orgId, body: { email: 'co@example.com', role: 'brand_owner' } });
+  await call('POST', '/invitations/accept', { token: coOwner, body: { token: tokenIn(await lastEmail('co@example.com')) } });
+  await call('POST', '/orgs/current/invitations', { token: coOwner, org: orgId, body: { email: 'friend@example.com', role: 'brand_owner' } });
+  const link = tokenIn(await lastEmail('friend@example.com'));
+  const coId = (await call('GET', '/me', { token: coOwner })).body.user.id;
+  await call('PATCH', `/orgs/current/members/${coId}`, { token: owner, org: orgId, body: { role: 'brand_marketing_manager' } }); // demoted
+  const friend = await account('friend@example.com');
+  assert.equal((await call('POST', '/invitations/accept', { token: friend, body: { token: link } })).body.code, 'invitation_revoked');
 });
 
 test('support admins can read the admin console but not change it', async () => {
