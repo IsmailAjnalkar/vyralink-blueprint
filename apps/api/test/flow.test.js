@@ -190,8 +190,26 @@ test('GlowSkin campaign: onboarding → LIVE → reconciliation → payout', asy
   for (const item of ['tiktok_logged_in', 'showcase_ready', 'camera_audio', 'network', 'samples_at_booth', 'compliance']) await ok('POST', `/bookings/${id.booking}/readiness/${item}`, { ...jordan, body: { result: 'pass' } });
   await ok('POST', `/bookings/${id.booking}/go`, { ...jordan, body: {} });
   await ok('POST', `/bookings/${id.booking}/start`, jordan);
+  // Real-time control center (server-sent events): the first event is the current state; a new metric is pushed.
+  assert.equal((await call('GET', `/locations/${id.loc}/control-center/stream`, brand)).status, 403);
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  const stop = new AbortController();
+  const stream = await fetch(`http://127.0.0.1:${app.server.address().port}/v1/locations/${id.loc}/control-center/stream`, { headers: { authorization: `Bearer ${T.rosa}`, 'x-org-id': id.ops }, signal: stop.signal });
+  assert.equal(stream.headers.get('content-type'), 'text/event-stream');
+  const reader = stream.body.getReader();
+  let buf = '';
+  const nextEvent = async () => {
+    while (!buf.includes('\n\n')) buf += new TextDecoder().decode((await reader.read()).value);
+    const [event, ...rest] = buf.split('\n\n');
+    buf = rest.join('\n\n');
+    return JSON.parse(event.replace(/^data: /, ''));
+  };
+  assert.equal((await nextEvent()).sessions[0].orders.source, 'Unavailable');
   await ok('POST', `/bookings/${id.booking}/metrics`, { ...jordan, body: { orders: 64, gmvCents: 256000, asOf: new Date().toISOString() } });
-  const cc = await ok('GET', `/locations/${id.loc}/control-center`, rosa);
+  const pushed = (await nextEvent()).sessions[0];
+  assert.deepEqual([pushed.orders.value, pushed.gmvCents.value, pushed.orders.source], [64, 256000, 'Manual']);
+  stop.abort();
+  const cc =await ok('GET', `/locations/${id.loc}/control-center`, rosa);
   assert.equal(cc.sessions[0].orders.source, 'Manual');
   assert.equal(cc.sessions[0].viewers.source, 'Unavailable');
 

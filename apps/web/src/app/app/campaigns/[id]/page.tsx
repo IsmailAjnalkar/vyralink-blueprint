@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Empty, Messages, PageHeader, Status, when } from "@/components/bits";
 import { TextField } from "@/components/form";
 import { useSession } from "@/components/shell";
+import { SessionResults } from "@/components/settlement";
 import { Thread } from "@/components/thread";
 import type { Product } from "@/components/product-form";
 import { Field } from "@/components/form";
@@ -161,6 +162,7 @@ export default function CampaignPage() {
         </Card>
       )}
 
+      {c?.bookings.filter((b) => b.status === "completed").map((b) => <SessionResults key={b.id} bookingId={b.id} org={org} canImport={false} />)}
       {c && <Thread campaignId={c.id} org={org} />}
     </div>
   );

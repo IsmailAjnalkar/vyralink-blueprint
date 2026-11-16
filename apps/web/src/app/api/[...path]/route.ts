@@ -41,12 +41,13 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   }
   const session = jar.get(SESSION_COOKIE)?.value;
   if (session) headers.set("authorization", `Bearer ${session}`);
-  const org = req.headers.get("x-org-id") ?? jar.get(ORG_COOKIE)?.value;
+  // EventSource can’t set headers, so streams name the organization in ?org=. The API still checks membership.
+  const org = req.headers.get("x-org-id") ?? req.nextUrl.searchParams.get("org") ?? jar.get(ORG_COOKIE)?.value;
   if (org) headers.set("x-org-id", org);
   headers.set("x-forwarded-for", clientIp(req));
 
   const body = ["GET", "HEAD"].includes(req.method) ? undefined : await req.text();
-  const upstream = await fetch(`${API_URL}/v1/${route}${req.nextUrl.search}`, { method: req.method, headers, body, cache: "no-store" });
+  const upstream = await fetch(`${API_URL}/v1/${route}${req.nextUrl.search}`, { method: req.method, headers, body, cache: "no-store", signal: req.signal });
 
   const outHeaders = new Headers();
   for (const h of FORWARD_RESPONSE) {

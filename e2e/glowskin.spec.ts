@@ -305,3 +305,86 @@ test("overlapping time is refused on the busy booth; a free booth is held and re
   await page.reload();
   await expect(page.locator("main")).toContainText(nextDay.toLocaleDateString("en-US", { dateStyle: "medium" }));
 });
+
+// ---------------------------------------------------------------- Phase 4: LIVE day
+test("control center updates in real time: LIVE start, manual numbers, incidents", async () => {
+  const board = rosaPage;
+  await board.goto("/app/studio/live");
+  await expect(board.getByRole("status").filter({ hasText: "Updates:" })).toContainText("live");
+  const session = card(board, "Vitamin C LIVE — GlowSkin");
+  await expect(board.getByText(/Vyralink does not control TikTok streams/)).toBeVisible();
+
+  const p = jordanPage;
+  await p.goto("/app/studio/live");
+  const mine = card(p, "Vitamin C LIVE — GlowSkin");
+  await mine.getByRole("button", { name: "Mark LIVE started" }).click();
+  await expect(session).toContainText("in progress"); // pushed to the other screen, no reload
+
+  await mine.getByRole("button", { name: "Enter numbers" }).click();
+  await mine.getByLabel("Orders (from TikTok Shop)").fill("64");
+  await mine.getByLabel("GMV (USD)").fill("2560.00");
+  await mine.getByRole("button", { name: "Save" }).click();
+  await expect(session).toContainText("$2,560.00");
+  await expect(session).toContainText("Manual");
+  await expect(session.getByText("Viewers").locator("..")).toContainText("Unavailable");
+
+  await mine.getByRole("button", { name: "Report incident" }).click();
+  await mine.getByLabel("Category").selectOption("technical");
+  await mine.getByLabel("What happened").fill("Ring light flickering");
+  await mine.getByRole("button", { name: "Open incident" }).click();
+  await expect(session).toContainText("Ring light flickering");
+
+  const answers = ["Replaced the bulb", "2"];
+  const reply = (d: import("@playwright/test").Dialog) => d.accept(answers.shift());
+  board.on("dialog", reply);
+  await session.locator("li", { hasText: "Ring light flickering" }).getByRole("button", { name: "Resolve" }).click();
+  await expect(session).not.toContainText("Ring light flickering");
+  board.off("dialog", reply);
+});
+
+test("emergency stop reaches the seller; the session is closed out", async () => {
+  const p = jordanPage;
+  const mine = card(p, "Vitamin C LIVE — GlowSkin");
+  await mine.getByRole("button", { name: "Report incident" }).click();
+  await mine.getByLabel("Category").selectOption("compliance");
+  await mine.getByLabel("What happened").fill("Seller claimed the serum cures acne");
+  await mine.getByLabel(/Emergency stop/).check();
+  p.once("dialog", (d) => d.accept());
+  await mine.getByRole("button", { name: "Open incident" }).click();
+  await expect(p.getByRole("status").filter({ hasText: "Emergency stop sent" })).toBeVisible();
+
+  await sellerPage.goto("/app/notifications");
+  await expect(sellerPage.locator("li", { hasText: "Emergency stop" })).toContainText("end the LIVE in the TikTok app now");
+  await expect(sellerPage.getByRole("link", { name: /Notifications \(\d+\)/ })).toBeVisible();
+
+  await mine.getByRole("button", { name: "Close out" }).click();
+  await mine.getByLabel(/Ended early/).check();
+  await mine.getByRole("button", { name: "Close out session" }).click();
+  await expect(p.getByRole("status").filter({ hasText: "Closed out" })).toBeVisible();
+  await expect(card(rosaPage, "Vitamin C LIVE — GlowSkin")).toHaveCount(0); // gone from the live board
+});
+
+test("TikTok Shop results and refunds are imported; brand sees the same figures", async () => {
+  const p = jordanPage;
+  await p.goto("/app/studio/bookings");
+  await p.getByLabel("Status").selectOption("completed");
+  await p.getByRole("link", { name: "Vitamin C LIVE — GlowSkin" }).click();
+  const orders = ["order_id,placed_at,amount_cents,status", ...Array.from({ length: 8 }, (_, i) => `O${i + 1},${new Date().toISOString()},4000,completed`)].join("\n");
+  await p.getByLabel("…or paste the CSV").first().fill(orders);
+  await p.getByRole("button", { name: "Import orders" }).click();
+  await expect(p.getByRole("status").filter({ hasText: "8 orders imported" })).toBeVisible();
+  const results = card(p, "Results");
+  await expect(results.getByRole("row", { name: /Attributed GMV/ })).toContainText("$320.00");
+  await expect(results.getByRole("row", { name: /Seller commission/ })).toContainText("$32.00");
+
+  await p.getByLabel("…or paste the CSV").last().fill("order_id,refund_cents\nO1,4000");
+  await p.getByRole("button", { name: "Import refunds" }).click();
+  await expect(results.getByRole("row", { name: /Refunds/ })).toContainText("-$40.00");
+  await expect(results.getByRole("row", { name: /Seller commission/ })).toContainText("$28.00");
+
+  await brandPage.goto(campaignUrl);
+  const brandResults = card(brandPage, "Results");
+  await expect(brandResults.getByRole("row", { name: /Eligible sales/ })).toContainText("$280.00");
+  await expect(brandResults.getByRole("row", { name: /Performance fee/ })).toContainText("$19.60"); // 7% × $280
+  await expect(brandResults.getByRole("button", { name: "Import orders" })).toHaveCount(0);
+});

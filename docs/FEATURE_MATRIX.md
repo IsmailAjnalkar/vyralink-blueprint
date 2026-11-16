@@ -24,16 +24,16 @@ Status: **Working** (built and tested), **Partial**, **Missing**, **Blocked** (n
 | Producer assignment, shifts | Partial | Partial | assignment with overlap protection; no shift roster |
 | Shipments, samples, returns | Working | Working | |
 | Check-in, no-show, readiness, go | Working | Working | E2E-verified |
-| LIVE metrics, incidents, emergency stop, closeout | Working | Missing | real-time push missing |
-| Control center | Working (polling) | Missing | SSE planned |
-| Results / refunds import (CSV) | Working | Missing | |
+| LIVE metrics, incidents, emergency stop, closeout | Working | Working | metrics are Manual until a TikTok data integration exists; Vyralink never controls the stream |
+| Control center | Working (SSE) | Working | pushed via Postgres NOTIFY; E2E-verified |
+| Results / refunds import (CSV) | Working | Working | file upload or paste |
 | Reconciliation and lock | Working | Missing | |
 | Invoices, credit notes | Working | Missing | real payments **Blocked** (Stripe account) |
 | Seller ledger, adjustments (two-person) | Working | Partial | seller earnings page; finance screens Phase 5 |
 | Payout runs (two-person) | Working | Missing | real payouts **Blocked** |
 | Disputes | Working | Missing | |
 | Brand campaign report | Working | Missing | |
-| Notifications (in-app) | Working | Missing | email delivery missing |
+| Notifications (in-app) | Working | Working | email delivery **Blocked** (no provider) |
 | Messages | Working | Working | contact details masked (E2E-verified) |
 | Admin: verifications, moderation, orgs, users, flags, settings, audit | Working | Partial | review queue (verifications, products, seller sandbox checks); rest later |
 | TikTok Shop API | Blocked | — | no partner access; CSV import works |

@@ -504,8 +504,8 @@ export default async function studio(app) {
   });
 
   // ---------------------------------------------------------------- dashboards
-  app.get('/locations/:id/control-center', async (req) => {
-    const l = await opsLocation(pool, req, req.params.id, ['location_manager', 'producer']);
+  /** Control-center payload for one location: today's sessions, most urgent first, each figure with its source. */
+  async function controlCenter(l) {
     const { rows } = await pool.query(
       `SELECT b.id, b.status, b.starts_at, b.ends_at, b.actual_start, b.go_at, bo.name AS booth, c.name AS campaign, o.name AS brand, sp.display_name AS host, pu.name AS producer,
          (SELECT row_to_json(m) FROM (SELECT orders, gmv_cents, as_of FROM metric_entries WHERE booking_id = b.id ORDER BY as_of DESC LIMIT 1) m) AS last_metric,
@@ -529,6 +529,46 @@ export default async function studio(app) {
         };
       }),
     };
+  }
+
+  app.get('/locations/:id/control-center', async (req) => controlCenter(await opsLocation(pool, req, req.params.id, ['location_manager', 'producer'])));
+
+  /**
+   * Server-sent events: the same payload, pushed whenever the location changes (Postgres NOTIFY), and every 30 s for
+   * time-based figures. Session, lock and role are re-checked on each tick, so a revoked session or removed member stops receiving.
+   */
+  app.get('/locations/:id/control-center/stream', async (req, reply) => {
+    const l = await opsLocation(pool, req, req.params.id, ['location_manager', 'producer']);
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+    let closed = false;
+    let timer = null;
+    const push = async () => {
+      if (closed) return;
+      try { res.write(`data: ${JSON.stringify(await controlCenter(l))}
+
+`); } catch { stop(); }
+    };
+    // Bursts of changes (one metric write touches several rows) become one push.
+    const soon = () => { clearTimeout(timer); timer = setTimeout(push, 200); };
+    const unsubscribe = await app.live.subscribe(l.id, soon);
+    const tick = setInterval(async () => {
+      const { rows } = await pool.query(`SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id JOIN memberships m ON m.user_id = u.id AND m.org_id = $2
+        WHERE s.id = $1 AND s.expires_at > now() AND NOT u.locked AND m.role IN ('location_manager', 'producer')`, [req.session.id, l.org_id]).catch(() => ({ rows: [] }));
+      if (!rows.length) return stop();
+      push();
+    }, 30000);
+    function stop() {
+      if (closed) return;
+      closed = true;
+      clearInterval(tick);
+      clearTimeout(timer);
+      unsubscribe();
+      res.end();
+    }
+    req.raw.on('close', stop);
+    await push();
   });
 
   app.get('/locations/:id/today', async (req) => {

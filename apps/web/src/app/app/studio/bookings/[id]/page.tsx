@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Empty, Messages, PageHeader, Status, selectClass, when } from "@/components/bits";
 import { Field, TextField } from "@/components/form";
 import { useSession } from "@/components/shell";
+import { SessionResults } from "@/components/settlement";
 import { Thread } from "@/components/thread";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -172,6 +173,8 @@ export default function StudioBooking() {
         </Card>
       )}
 
+      {bk.status === "completed" && <SessionResults bookingId={bk.id} org={org} canImport={floor || role === "finance_admin"} />}
+      {["checked_in", "in_progress"].includes(bk.status) && <p className="text-sm"><Link className="underline" href="/app/studio/live">Run this session from the LIVE control center →</Link></p>}
       <Thread campaignId={bk.campaign_id} org={org} />
     </div>
   );

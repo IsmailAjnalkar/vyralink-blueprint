@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
+import { liveHub } from './live.js';
 import { HttpError, sha256 } from './http.js';
 import auth from './routes/auth.js';
 import identity from './routes/identity.js';
@@ -17,6 +18,8 @@ export const API_PREFIX = '/v1';
 export function buildApp({ pool, logger = false, rateLimitScale = Number(process.env.RATE_LIMIT_SCALE ?? 1), trustProxy = Number(process.env.TRUST_PROXY_HOPS ?? 0) }) {
   const app = Fastify({ logger, trustProxy, ajv: { customOptions: { removeAdditional: false, coerceTypes: false } } });
   app.decorate('pool', pool);
+  app.decorate('live', liveHub(pool));
+  app.addHook('onClose', () => app.live.close());
   app.decorate('rateLimitScale', rateLimitScale);
 
   app.register(swagger, {
