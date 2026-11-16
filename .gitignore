@@ -1,2 +1,6 @@
 batch*-files.json
 node_modules/
+.dev-db/
+.dev-mail/
+.next/
+*.tsbuildinfo

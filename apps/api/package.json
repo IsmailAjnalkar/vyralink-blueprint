@@ -1,5 +1,5 @@
 {
-  "name": "vyralink-api",
+  "name": "@vyralink/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,6 +12,8 @@
     "db:stop": "node scripts/dev-db.mjs stop",
     "migrate": "node src/migrate.js",
     "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "routes": "node scripts/list-routes.mjs",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

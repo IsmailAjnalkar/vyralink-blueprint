@@ -1,0 +1,16 @@
+{
+  "name": "vyralink",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "db:start": "npm run db:start -w @vyralink/api",
+    "db:stop": "npm run db:stop -w @vyralink/api",
+    "migrate": "npm run migrate -w @vyralink/api",
+    "dev:api": "npm run dev -w @vyralink/api",
+    "dev:web": "npm run dev -w @vyralink/web",
+    "test": "npm test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  }
+}

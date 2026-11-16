@@ -23,7 +23,14 @@ const PASSWORD = process.env.DEV_DB_PASSWORD ?? 'postgres';
 const DB_NAME = process.env.DEV_DB_NAME ?? 'vyralink';
 const isRoot = process.getuid?.() === 0;
 
-const platformDir = path.join(repoRoot, 'node_modules', '@embedded-postgres', `${os.platform() === 'win32' ? 'windows' : os.platform()}-${os.arch()}`, 'native');
+// Look in this package's node_modules and every parent's, so it works whether npm workspaces hoisted the package or not.
+const pgPackage = path.join('node_modules', '@embedded-postgres', `${os.platform() === 'win32' ? 'windows' : os.platform()}-${os.arch()}`, 'native');
+const platformDir = (() => {
+  for (let dir = repoRoot; ; dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, pgPackage))) return path.join(dir, pgPackage);
+    if (path.dirname(dir) === dir) return path.join(repoRoot, pgPackage);
+  }
+})();
 const binDir = isRoot ? '/opt/vyralink-pg/bin' : path.join(platformDir, 'bin');
 const baseDir = process.env.DEV_DB_DIR ?? (isRoot ? '/var/lib/vyralink-dev-db' : path.join(repoRoot, '.dev-db'));
 const dataDir = path.join(baseDir, 'data');
