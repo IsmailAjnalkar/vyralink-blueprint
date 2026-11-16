@@ -107,6 +107,16 @@ test('MFA brute force: wrong codes lock the account and destroy the half-signed-
   assert.equal((await call('POST', '/auth/login', { body: { email: 'mfa-brute@example.com', password: PW } })).body.code, 'account_locked');
 });
 
+test('MFA brute force can’t be reset by signing in with the password again', async () => {
+  const t = await account('mfa-interleave@example.com');
+  const { secret } = (await call('POST', '/auth/mfa/setup', { token: t })).body;
+  await call('POST', '/auth/mfa/enable', { token: t, body: { code: totp(base32Decode(secret)) } });
+  const login = async () => (await call('POST', '/auth/login', { body: { email: 'mfa-interleave@example.com', password: PW } })).body;
+  for (let i = 0; i < 4; i++) await call('POST', '/auth/mfa/verify', { token: (await login()).token, body: { code: '000000' } }); // new password login each time
+  await call('POST', '/auth/mfa/verify', { token: (await login()).token, body: { code: '000000' } }); // 5th wrong code overall
+  assert.equal((await login()).code, 'account_locked');
+});
+
 test('privileged staff without MFA can’t read disputes either', async () => {
   const t = await account('admin-nomfa@example.com');
   await pool.query(`UPDATE users SET is_super_admin = true WHERE email = 'admin-nomfa@example.com'`);

@@ -100,8 +100,10 @@ export default async function auth(app) {
       }
       if (u.locked) throw forbidden('This account is locked. Contact support.');
       if (!u.email_verified_at) throw forbidden('Confirm your email first. We can send the link again.');
-      await db.query('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = $1', [u.id]);
+      // With MFA on, the password alone never clears the failure counter: only a correct code does (mfa/verify).
+      // Otherwise re-entering the password between guesses would reset the count and allow unlimited code guessing.
       if (u.mfa_enabled_at) return { mfaRequired: true, token: await startSession(db, req, u.id, { pendingMfa: true }) };
+      await db.query('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = $1', [u.id]);
       await audit(db, { user: { id: u.id }, ip: req.ip }, 'user.login', 'user', u.id);
       return { token: await startSession(db, req, u.id) };
     }).then((r) => {
