@@ -38,7 +38,8 @@ RUN mkdir -p /data/storage && chown -R node:node /data
 USER node
 EXPOSE 4020
 HEALTHCHECK --interval=15s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:4020/v1/health || exit 1
-CMD ["node", "apps/api/src/server.js"]
+# migrate.js also creates the super admin from ADMIN_EMAIL / ADMIN_PASSWORD (server.js only migrates)
+CMD ["sh", "-c", "node apps/api/src/migrate.js && exec node apps/api/src/server.js"]
 
 # ---- worker: email outbox and scheduled jobs from the Postgres job table
 FROM base AS worker
