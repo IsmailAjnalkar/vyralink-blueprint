@@ -1,6 +1,6 @@
 # Vyralink + Creator Hub: final build report
 
-Date: 16 November 2026 · Branch `platform` (18 commits on top of `main`, not pushed) · Repository `vyralink-blueprint`
+Date: 16 November 2026 · Branch `platform` (pushed to GitHub; CI green) · Repository `vyralink-blueprint`
 
 ## 1. Status in one paragraph
 
@@ -52,7 +52,7 @@ API: 139 paths / 158 operations, documented at `/v1/openapi.json`. Web: 33 signe
 
 - **Deployed: nothing.** No staging or production environment exists. Deploying needs your approval.
 - **Ready to deploy**: Docker images and a compose stack with Postgres and a Caddy edge proxy (automatic HTTPS with a domain), backup and restore scripts, and a CI workflow (`.github/workflows/ci.yml`).
-- **CI has not run on GitHub yet**, because the branch hasn't been pushed. Every step was run locally with the same commands.
+- **CI passes on GitHub** (run 43968428778, 16 Nov 2026): type checks, lint, audit, API tests, the GlowSkin browser test with the accessibility sweep, and all three Docker images. The first run caught one defect (the empty `apps/web/public` folder was not in git, so the web image failed from a clean checkout); fixed.
 
 ## 6. Blocked or not built
 
@@ -82,14 +82,14 @@ API: 139 paths / 158 operations, documented at `/v1/openapi.json`. Web: 33 signe
 | Testing | 8.5 | API, browser, accessibility and performance tests; one open flaky step |
 | Accessibility | 8 | automated WCAG 2.1 A/AA clean; no manual screen-reader pass yet |
 | Performance | 7.5 | targets met on seeded volume; single-machine smoke test only |
-| Operations | 6 | containers, backups and CI ready; no environment, monitoring or CI run yet |
+| Operations | 6.5 | containers, backups and CI passing on GitHub; no environment or monitoring yet |
 | External integrations | 2 | all real providers blocked on accounts |
 
 **Overall: 7/10 for a staging pilot** with sandbox payments and invited users. **4/10 for production go-live.** The difference is almost entirely the external accounts in §6, plus a real environment with monitoring.
 
 ## 9. Next steps (in order)
 
-1. Push the branch and let CI run (needs your go-ahead).
+1. ~~Push the branch and let CI run~~ done: CI green on GitHub.
 2. Create a staging environment and deploy the compose stack (needs your approval).
 3. Open the Stripe (test mode), email provider and S3 accounts; build the three adapters.
 4. Apply for TikTok Shop partner access.

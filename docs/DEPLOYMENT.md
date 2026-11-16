@@ -44,7 +44,7 @@ Run `backup.sh` nightly (cron or a scheduled job) and copy the files off the mac
 - the GlowSkin browser test (Chromium, with the axe accessibility sweep);
 - builds of the three Docker images.
 
-It deploys nothing. Each step was run locally with the same commands; the workflow has not yet run on GitHub because the branch hasn't been pushed.
+It deploys nothing. It passes on GitHub (first green run: 43968428778, 16 Nov 2026).
 
 ## Local development
 
