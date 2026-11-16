@@ -8,7 +8,9 @@
 npm install
 npm run db:start -w apps/api
 npm run migrate -w apps/api
-npm run dev            # API :4020, web :3020
+npm run dev:api        # API  http://127.0.0.1:4020/v1
+npm start -w @vyralink/worker   # jobs + email outbox (.dev-mail/)
+npm run dev:web        # web  http://localhost:3020
 ```
 
 ## Planned (Phase 9)

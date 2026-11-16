@@ -13,12 +13,12 @@
 | Two-person control (adjustments, payout runs) | Done | tests |
 | Double-booking prevention in DB | Done | exclusion constraints; test |
 | Audit log for critical actions | Done | `audit_log` |
-| Secure cookies + CSRF | Missing | Phase 1 |
+| Secure cookies + CSRF | Done | httpOnly SameSite=Lax cookie (Secure when `COOKIE_SECURE=true`); proxy refuses cross-origin writes (smoke-tested) |
 | Email verification / password reset | Done | `auth.test.js` |
 | MFA for privileged users | Done | TOTP; `auth.test.js`, flow test enrollment gate |
 | Rate limiting / lockout | Done | `auth.test.js` |
 | Session revocation | Done | `auth.test.js` |
-| Security headers (CSP, HSTS) | Missing | Phase 1 (web) |
+| Security headers (CSP, HSTS) | Done | `next.config.ts`; HSTS when served over HTTPS |
 | Secure file uploads | Missing | Phase 6 |
 | Webhook signature + replay protection | Missing | Phase 6 |
 | Secrets outside source | Done | env vars; no secrets committed |

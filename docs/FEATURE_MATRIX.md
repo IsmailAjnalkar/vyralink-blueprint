@@ -4,14 +4,14 @@ Status: **Working** (built and tested), **Partial**, **Missing**, **Blocked** (n
 
 | Feature | API | UI | Notes |
 |---|---|---|---|
-| Registration / login / logout | Working | Missing | bearer tokens only |
-| Email verification | Working | Missing | dev outbox; real email **Blocked** (no provider) |
-| Password reset | Working | Missing | signs out every session |
-| MFA for privileged users | Working | Missing | TOTP, secrets encrypted at rest |
+| Registration / login / logout | Working | Working | httpOnly cookie via web proxy; MFA step in sign-in |
+| Email verification | Working | Working | dev outbox; real email **Blocked** (no provider) |
+| Password reset | Working | Working | signs out every session |
+| MFA for privileged users | Working | Working | TOTP, secrets encrypted at rest |
 | Rate limiting / lockout | Working | — | |
-| Sessions: expiry, revocation | Working | Missing | |
-| Organizations, members, roles | Working | Missing | incl. Support Admin, Brand Finance |
-| Organization invitations by email | Working | Missing | |
+| Sessions: expiry, revocation | Working | Working | |
+| Organizations, members, roles | Working | Working | incl. Support Admin, Brand Finance |
+| Organization invitations by email | Working | Working | |
 | Brand verification | Working | Missing | |
 | Products (incl. claims review) | Working | Missing | image upload missing |
 | Campaigns (LIVE, LIVE DROP) + approval | Working | Missing | UGC/influencer/affiliate/retainer types missing |
